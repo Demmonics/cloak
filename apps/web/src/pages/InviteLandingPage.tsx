@@ -47,7 +47,7 @@ export function InviteLandingPage() {
   if (vaultState === 'needs_onboarding') {
     return (
       <div>
-        <div className="bg-[#7c6cff]/15 border-b border-[#7c6cff]/30 px-4 py-2 text-center text-xs text-[#c4b5fd]">
+        <div className="bg-[var(--cloak-accent-soft)] border-b border-[var(--cloak-accent-border)] px-4 py-2 text-center text-xs text-[var(--cloak-accent-text)]">
           Step 1 of 2: Create or restore your local Cloak identity to accept invitation {inspection ? `to "${inspection.roomName}"` : ''}.
         </div>
         <OnboardingScreen />
@@ -87,51 +87,51 @@ export function InviteLandingPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0c0e14] text-[#f1f3f9] flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#262c3f] bg-[#141722] p-6 shadow-2xl space-y-5">
+    <main className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-6 space-y-5">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#7c6cff]/20 border border-[#7c6cff]/40 flex items-center justify-center text-[#a5b4fc]">
+          <div className="w-11 h-11 rounded-[10px] bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold">Private Room Invitation</h1>
-            <p className="text-xs text-[#9aa3b8]">End-to-end encrypted access via URL fragment secret</p>
+            <h1 className="text-lg font-semibold text-[var(--cloak-text)]">Private Room Invitation</h1>
+            <p className="text-xs text-[var(--cloak-text-muted)]">End-to-end encrypted access via URL fragment secret</p>
           </div>
         </div>
 
         {inspectError && (
-          <div role="alert" className="rounded-lg border border-[#ef4444]/50 bg-[#ef4444]/10 px-3 py-2 text-xs text-[#fca5a5]">
+          <div role="alert" className="rounded-[8px] border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] px-3 py-2 text-xs text-[var(--cloak-danger-text)]">
             {inspectError}
           </div>
         )}
 
         {pendingApproval ? (
-          <div className="rounded-xl border border-[#f59e0b]/40 bg-[#f59e0b]/10 p-4 text-xs text-[#fde68a] space-y-3">
+          <div className="rounded-[10px] border border-[var(--cloak-warn-border)] bg-[var(--cloak-warn-soft)] p-4 text-xs text-[var(--cloak-warn-text)] space-y-3">
             <div className="font-semibold text-sm">Awaiting Owner Approval</div>
             <p>
               Your device joined the room&apos;s approval queue. Once the owner approves your device,
               they will wrap the room&apos;s encryption epoch key to your X25519 keypair automatically.
             </p>
-            <Link to="/" className="inline-block text-[#a5b4fc] hover:underline">
+            <Link to="/" className="inline-block text-[var(--cloak-accent-text)] hover:underline">
               Return to Cloak Workspace
             </Link>
           </div>
         ) : inspection ? (
           <form onSubmit={handleAccept} className="space-y-4">
-            <div className="rounded-xl border border-[#262c3f] bg-[#10131d] p-4 space-y-2 text-xs">
+            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-4 space-y-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-[#8d96ad]">Room</span>
-                <span className="font-semibold text-white">{inspection.roomName}</span>
+                <span className="text-[var(--cloak-text-dim)]">Room</span>
+                <span className="font-semibold text-[var(--cloak-text)]">{inspection.roomName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#8d96ad]">Granted Role</span>
-                <span className="capitalize text-[#c4b5fd]">{inspection.roleName}</span>
+                <span className="text-[var(--cloak-text-dim)]">Granted Role</span>
+                <span className="capitalize text-[var(--cloak-accent-text)]">{inspection.roleName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#8d96ad]">Epoch</span>
-                <span className="font-mono text-[#e2e8f0]">Epoch {inspection.wrappedEpoch}</span>
+                <span className="text-[var(--cloak-text-dim)]">Epoch</span>
+                <span className="font-mono text-[var(--cloak-text-body)]">Epoch {inspection.wrappedEpoch}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-[#34d399] pt-1">
+              <div className="flex items-center gap-1.5 text-[var(--cloak-success-text)] pt-1">
                 <Lock className="w-3.5 h-3.5" />
                 <span>
                   {inspection.requiresApproval
@@ -145,7 +145,7 @@ export function InviteLandingPage() {
 
             {inspection.hasPassword && (
               <div>
-                <label htmlFor="invite-landing-pw" className="block text-xs font-medium text-[#cbd5e1] mb-1.5">
+                <label htmlFor="invite-landing-pw" className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">
                   Invitation Password Required
                 </label>
                 <input
@@ -154,7 +154,7 @@ export function InviteLandingPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)]"
                 />
               </div>
             )}
@@ -164,11 +164,11 @@ export function InviteLandingPage() {
             </Button>
           </form>
         ) : !inspectError ? (
-          <div className="text-xs text-[#9aa3b8]">Inspecting invitation metadata...</div>
+          <div className="text-xs text-[var(--cloak-text-muted)]">Inspecting invitation metadata...</div>
         ) : null}
 
         <div className="text-center">
-          <Link to="/" className="text-xs text-[#8d96ad] hover:text-white">
+          <Link to="/" className="text-xs text-[var(--cloak-text-dim)] hover:text-[var(--cloak-text)]">
             Back to Workspace
           </Link>
         </div>

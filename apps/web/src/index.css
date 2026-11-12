@@ -1,17 +1,19 @@
 @import "tailwindcss";
+@source "../../../packages/ui/src";
 @import "@cloak/ui/styles.css";
 
 html,
 body,
 #root {
   height: 100%;
-  background-color: #0b0c10;
-  color: #f1f3f9;
+  background-color: var(--cloak-bg-void);
+  color: var(--cloak-text);
+  font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2c334a transparent;
+  scrollbar-color: var(--cloak-scroll-thumb) var(--cloak-scroll-track);
 }
 
 .cloak-prose p {
@@ -30,34 +32,36 @@ body,
   margin: 0.45rem 0;
   padding: 0.65rem 0.85rem;
   border-radius: 0.5rem;
-  background: #0a0c12;
-  border: 1px solid #262c3f;
+  background: var(--cloak-bg-input);
+  border: 1px solid var(--cloak-border);
   overflow-x: auto;
   font-size: 0.84rem;
 }
 
 .cloak-prose code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, SFMono-Regular, Menlo, monospace;
   font-size: 0.86em;
-  background: rgba(124, 108, 255, 0.14);
+  background: var(--cloak-accent-soft);
+  color: var(--cloak-accent-text);
   padding: 0.1rem 0.3rem;
   border-radius: 0.3rem;
 }
 
 .cloak-prose pre code {
   background: transparent;
+  color: inherit;
   padding: 0;
 }
 
 .cloak-prose blockquote {
   margin: 0.35rem 0;
   padding-left: 0.75rem;
-  border-left: 3px solid #7c6cff;
-  color: #cbd5e1;
+  border-left: 3px solid var(--cloak-accent);
+  color: var(--cloak-text-muted);
 }
 
 .cloak-prose a {
-  color: #7dd3fc;
+  color: var(--cloak-info-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -75,4 +79,3 @@ body,
 .cloak-prose ol {
   list-style-type: decimal;
 }
-

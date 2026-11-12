@@ -98,7 +98,7 @@ export async function authenticateWithBundle(
         ed25519PublicKeyB64: bundle.ed25519PublicKeyB64,
         x25519PublicKeyB64: bundle.x25519PublicKeyB64,
         displayName: profileHint?.displayName ?? 'Anonymous',
-        avatarColor: profileHint?.avatarColor ?? '#7c6cff',
+        avatarColor: profileHint?.avatarColor ?? '#0f766e',
         avatarEmoji: profileHint?.avatarEmoji ?? null,
         signatureB64,
       });
@@ -223,7 +223,7 @@ export async function restoreDeviceFromBackupFile(params: {
   const bundle = await importEncryptedDeviceBackup(parsed, params.backupPassword);
   const profileHint = {
     displayName: 'Restored Device',
-    avatarColor: '#7c6cff',
+    avatarColor: '#0f766e',
     avatarEmoji: null,
     ed25519PublicKeyB64: bundle.ed25519PublicKeyB64,
     x25519PublicKeyB64: bundle.x25519PublicKeyB64,
@@ -1338,7 +1338,7 @@ export async function buildRoomExportInput(params: {
       channelName: channelMap.get(m.channelId) ?? 'deleted-channel',
       senderDeviceId: m.senderDeviceId,
       senderDisplayName: member?.displayName || m.senderDeviceId.slice(0, 8),
-      senderAvatarColor: member?.avatarColor || '#7c6cff',
+      senderAvatarColor: member?.avatarColor || '#0f766e',
       createdAtUtc: m.createdAt,
       editedAtUtc: m.editedAt,
       expiresAtUtc: m.expiresAt,

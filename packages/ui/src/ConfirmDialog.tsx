@@ -49,7 +49,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <p className="text-sm text-[#cbd5e1] leading-relaxed">{description}</p>
+      <p className="text-sm text-[var(--cloak-text-body)] leading-relaxed">{description}</p>
     </ModalDialog>
   );
 }

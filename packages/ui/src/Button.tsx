@@ -7,13 +7,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const VARIANT_CLASSES: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary:
-    'bg-[#7c6cff] hover:bg-[#8f82ff] text-white border border-transparent shadow-sm',
+    'bg-[var(--cloak-accent)] hover:bg-[var(--cloak-accent-hover)] text-[var(--cloak-accent-ink)] border border-transparent font-semibold',
   secondary:
-    'bg-[#1f2536] hover:bg-[#2a3147] text-[#f1f3f9] border border-[#37405b]',
+    'bg-[var(--cloak-bg-surface)] hover:bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text)] border border-[var(--cloak-border)] hover:border-[var(--cloak-border-strong)]',
   ghost:
-    'bg-transparent hover:bg-[rgba(124,108,255,0.14)] text-[#c8cee0] hover:text-white border border-transparent',
+    'bg-transparent hover:bg-[var(--cloak-bg-hover)] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] border border-transparent',
   danger:
-    'bg-[#dc2626] hover:bg-[#ef4444] text-white border border-transparent',
+    'bg-[var(--cloak-danger)] hover:bg-[var(--cloak-danger-hover)] text-white border border-transparent',
 };
 
 const SIZE_CLASSES: Record<NonNullable<ButtonProps['size']>, string> = {
@@ -37,4 +37,3 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   },
 );
 Button.displayName = 'Button';
-

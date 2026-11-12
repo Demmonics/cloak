@@ -38,6 +38,7 @@ import {
 } from '../components/Modals.js';
 import { OnboardingScreen } from '../components/OnboardingScreen.js';
 import { RightSidebar } from '../components/RightSidebar.js';
+import { ThemeToggle } from '../components/ThemeToggle.js';
 import { UnlockVaultScreen } from '../components/UnlockVaultScreen.js';
 import { VoiceDockBar } from '../components/VoiceDockBar.js';
 import { api, getApiAccessToken, type RoomDetailResponse } from '../lib/api.js';
@@ -352,9 +353,9 @@ export function WorkspacePage() {
 
   if (vaultState === 'loading') {
     return (
-      <main className="min-h-screen bg-[#0c0e14] p-8 space-y-4">
+      <main className="min-h-screen bg-[var(--cloak-bg-void)] p-8 space-y-4">
         <Skeleton className="h-8 w-52" />
-        <Skeleton className="h-[70vh] w-full rounded-2xl" />
+        <Skeleton className="h-[70vh] w-full rounded-[12px]" />
       </main>
     );
   }
@@ -375,14 +376,14 @@ export function WorkspacePage() {
     });
 
   return (
-    <div className="h-screen w-screen bg-[#0c0e14] text-[#f1f3f9] flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex flex-col overflow-hidden">
       <div ref={remoteAudioRefs} className="hidden" aria-hidden="true" />
 
       {/* Reconnection Banner */}
       {(wsStatus === 'reconnecting' || wsStatus === 'disconnected') && (
         <div
           role="status"
-          className="bg-[#f59e0b]/15 border-b border-[#f59e0b]/40 px-4 py-1.5 text-xs text-[#fde68a] flex items-center justify-center gap-2"
+          className="bg-[var(--cloak-warn-soft)] border-b border-[var(--cloak-warn-border)] px-4 py-1.5 text-xs text-[var(--cloak-warn-text)] flex items-center justify-center gap-2"
         >
           <WifiOff className="w-3.5 h-3.5" />
           <span>
@@ -420,7 +421,7 @@ export function WorkspacePage() {
               onClick={() => setMobileNavOpen(false)}
               className="flex-1 md:hidden cursor-pointer flex items-start justify-end p-4"
             >
-              <span className="p-2 rounded-lg bg-[#141722] text-white">
+              <span className="p-2 rounded-[7px] bg-[var(--cloak-bg-surface)] text-[var(--cloak-text)] border border-[var(--cloak-border)]">
                 <X className="w-5 h-5" />
               </span>
             </button>
@@ -428,37 +429,40 @@ export function WorkspacePage() {
         </div>
 
         {/* Main Chat / Call Area */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#141722]">
+        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-[var(--cloak-bg-void)]">
           {roomDetail && activeChannel ? (
             <>
               {/* Top Header Bar */}
-              <header className="px-3 sm:px-4 py-2.5 border-b border-[#1f2435] bg-[#12151f] flex items-center justify-between gap-2 sm:gap-3">
+              <header className="px-3 sm:px-4 py-2.5 border-b border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)] flex items-center justify-between gap-2 sm:gap-3">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <button
                     type="button"
                     aria-label="Open navigation menu"
                     onClick={() => setMobileNavOpen(true)}
-                    className="md:hidden p-1.5 rounded-lg bg-[#1a1f2e] text-[#cbd5e1] cursor-pointer shrink-0"
+                    className="md:hidden p-1.5 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] cursor-pointer shrink-0"
                   >
                     <Menu className="w-4 h-4" />
                   </button>
-                  <Hash className="w-4 h-4 text-[#a5b4fc] shrink-0" />
+                  <Hash className="w-4 h-4 text-[var(--cloak-accent-text)] shrink-0" />
                   <div className="min-w-0">
-                    <h1 className="text-sm font-semibold text-white truncate">{activeChannel.name}</h1>
+                    <h1 className="text-sm font-semibold text-[var(--cloak-text)] truncate">{activeChannel.name}</h1>
                     {activeChannel.topic && (
-                      <p className="text-[11px] text-[#8d96ad] truncate hidden sm:block">{activeChannel.topic}</p>
+                      <p className="text-[11px] text-[var(--cloak-text-dim)] truncate hidden sm:block">{activeChannel.topic}</p>
                     )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 overflow-x-auto max-w-[54vw] sm:max-w-none">
+                  <ThemeToggle />
                   <button
                     type="button"
                     onClick={() => setRightDrawer('search')}
                     title="Local Search (Ctrl+K)"
                     aria-label="Local Search"
-                    className={`p-2 rounded-lg cursor-pointer ${
-                      rightDrawer === 'search' ? 'bg-[#7c6cff]/25 text-white' : 'text-[#9aa3b8] hover:text-white hover:bg-[#1a1f2e]'
+                    className={`p-2 rounded-[7px] cursor-pointer ${
+                      rightDrawer === 'search'
+                        ? 'bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
+                        : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
                     }`}
                   >
                     <Search className="w-4 h-4" />
@@ -468,8 +472,10 @@ export function WorkspacePage() {
                     onClick={() => setRightDrawer('pins')}
                     title="Pinned Messages"
                     aria-label="Pinned Messages"
-                    className={`p-2 rounded-lg cursor-pointer ${
-                      rightDrawer === 'pins' ? 'bg-[#7c6cff]/25 text-white' : 'text-[#9aa3b8] hover:text-white hover:bg-[#1a1f2e]'
+                    className={`p-2 rounded-[7px] cursor-pointer ${
+                      rightDrawer === 'pins'
+                        ? 'bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
+                        : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
                     }`}
                   >
                     <Pin className="w-4 h-4" />
@@ -479,8 +485,10 @@ export function WorkspacePage() {
                     onClick={() => setRightDrawer('files')}
                     title="Shared Encrypted Files"
                     aria-label="Shared Files"
-                    className={`p-2 rounded-lg cursor-pointer ${
-                      rightDrawer === 'files' ? 'bg-[#7c6cff]/25 text-white' : 'text-[#9aa3b8] hover:text-white hover:bg-[#1a1f2e]'
+                    className={`p-2 rounded-[7px] cursor-pointer ${
+                      rightDrawer === 'files'
+                        ? 'bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
+                        : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
                     }`}
                   >
                     <FileText className="w-4 h-4" />
@@ -490,8 +498,10 @@ export function WorkspacePage() {
                     onClick={() => setRightDrawer('bookmarks')}
                     title="Local Bookmarks"
                     aria-label="Bookmarks"
-                    className={`p-2 rounded-lg cursor-pointer ${
-                      rightDrawer === 'bookmarks' ? 'bg-[#7c6cff]/25 text-white' : 'text-[#9aa3b8] hover:text-white hover:bg-[#1a1f2e]'
+                    className={`p-2 rounded-[7px] cursor-pointer ${
+                      rightDrawer === 'bookmarks'
+                        ? 'bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
+                        : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
                     }`}
                   >
                     <Bookmark className="w-4 h-4" />
@@ -501,8 +511,10 @@ export function WorkspacePage() {
                     onClick={() => setRightDrawer('members')}
                     title="Members & Approvals"
                     aria-label="Members"
-                    className={`p-2 rounded-lg cursor-pointer ${
-                      rightDrawer === 'members' ? 'bg-[#7c6cff]/25 text-white' : 'text-[#9aa3b8] hover:text-white hover:bg-[#1a1f2e]'
+                    className={`p-2 rounded-[7px] cursor-pointer ${
+                      rightDrawer === 'members'
+                        ? 'bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
+                        : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
                     }`}
                   >
                     <Users className="w-4 h-4" />
@@ -512,8 +524,10 @@ export function WorkspacePage() {
                     onClick={() => setRightDrawer('info')}
                     title="Room Security & Storage Quota"
                     aria-label="Room Info"
-                    className={`p-2 rounded-lg cursor-pointer ${
-                      rightDrawer === 'info' ? 'bg-[#7c6cff]/25 text-white' : 'text-[#9aa3b8] hover:text-white hover:bg-[#1a1f2e]'
+                    className={`p-2 rounded-[7px] cursor-pointer ${
+                      rightDrawer === 'info'
+                        ? 'bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
+                        : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
                     }`}
                   >
                     <Info className="w-4 h-4" />
@@ -612,20 +626,23 @@ export function WorkspacePage() {
           ) : (
             /* Empty Workspace CTA */
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
-              <button
-                type="button"
-                aria-label="Open navigation menu"
-                onClick={() => setMobileNavOpen(true)}
-                className="md:hidden self-start p-2 rounded-lg bg-[#1a1f2e] text-white"
-              >
-                <Menu className="w-4 h-4" />
-              </button>
-              <div className="w-14 h-14 rounded-2xl bg-[#7c6cff]/15 border border-[#7c6cff]/40 flex items-center justify-center text-[#a5b4fc]">
+              <div className="w-full flex items-center justify-between md:justify-end">
+                <button
+                  type="button"
+                  aria-label="Open navigation menu"
+                  onClick={() => setMobileNavOpen(true)}
+                  className="md:hidden p-2 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text)]"
+                >
+                  <Menu className="w-4 h-4" />
+                </button>
+                <ThemeToggle />
+              </div>
+              <div className="w-14 h-14 rounded-[12px] bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
                 <Shield className="w-7 h-7" />
               </div>
               <div className="max-w-md space-y-1.5">
-                <h1 className="text-xl font-semibold text-white">Welcome to Cloak, {profile?.displayName}</h1>
-                <p className="text-sm text-[#9aa3b8]">
+                <h1 className="text-xl font-semibold text-[var(--cloak-text)]">Welcome to Cloak, {profile?.displayName}</h1>
+                <p className="text-sm text-[var(--cloak-text-muted)]">
                   Create a private E2EE room or join an existing workspace using an invitation link.
                 </p>
               </div>

@@ -76,7 +76,7 @@ function SanitizedMarkdown({ text }: { text: string }) {
 
   return (
     <div
-      className="cloak-md text-sm text-[#e2e8f0] leading-relaxed break-words"
+      className="cloak-md text-sm text-[var(--cloak-text-body)] leading-relaxed break-words"
       // Sanitized strictly via @cloak/web sanitizeUntrustedHtml (DOMParser/DOMPurify/Sanitizer)
       dangerouslySetInnerHTML={{ __html: cleanHtml }}
     />
@@ -141,27 +141,27 @@ function AttachmentCard({ att }: { att: DecryptedAttachmentRef }) {
   };
 
   return (
-    <div className="mt-2 max-w-md rounded-xl border border-[#283047] bg-[#10131d] p-2.5 space-y-2">
+    <div className="mt-2 max-w-md rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-2.5 space-y-2">
       {isSafePreviewImage && blobUrl && (
         <img
           src={blobUrl}
           alt={att.encryptedFilename}
           loading="lazy"
-          className="max-h-72 rounded-lg object-contain bg-[#090b10]"
+          className="max-h-72 rounded-[7px] object-contain bg-black"
         />
       )}
       {isSafeAudio && blobUrl && (
         <audio controls src={blobUrl} className="w-full h-9" />
       )}
       {isSafeVideo && blobUrl && (
-        <video controls src={blobUrl} className="max-h-72 w-full rounded-lg bg-black" />
+        <video controls src={blobUrl} className="max-h-72 w-full rounded-[7px] bg-black" />
       )}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          <FileText className="w-4 h-4 shrink-0 text-[#a5b4fc]" />
+          <FileText className="w-4 h-4 shrink-0 text-[var(--cloak-accent-text)]" />
           <div className="min-w-0">
-            <div className="text-xs font-medium text-[#f1f3f9] truncate">{att.encryptedFilename}</div>
-            <div className="text-[10px] text-[#8d96ad]">
+            <div className="text-xs font-medium text-[var(--cloak-text)] truncate">{att.encryptedFilename}</div>
+            <div className="text-[10px] text-[var(--cloak-text-dim)]">
               {(att.plaintextSizeBytes / 1024).toFixed(1)} KiB · Encrypted stream
               {isSvg ? ' · SVG preview disabled (download only)' : ''}
             </div>
@@ -172,7 +172,7 @@ function AttachmentCard({ att }: { att: DecryptedAttachmentRef }) {
           {loading ? 'Decrypting...' : 'Save'}
         </Button>
       </div>
-      {error && <div className="text-[11px] text-[#fca5a5]">{error}</div>}
+      {error && <div className="text-[11px] text-[var(--cloak-danger-text)]">{error}</div>}
     </div>
   );
 }
@@ -272,11 +272,11 @@ export function MessageList({
       <div ref={parentRef} className="flex-1 overflow-y-auto px-4 py-3">
         {rows.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
-            <div className="w-12 h-12 rounded-2xl bg-[#181c29] border border-[#2a3146] flex items-center justify-center text-[#a5b4fc] mb-3">
+            <div className="w-12 h-12 rounded-[12px] bg-[var(--cloak-bg-surface)] border border-[var(--cloak-border)] flex items-center justify-center text-[var(--cloak-accent-text)] mb-3">
               <Lock className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-semibold text-[#f1f3f9]">End-to-End Encrypted Channel</h3>
-            <p className="text-xs text-[#8d96ad] max-w-sm mt-1">
+            <h3 className="text-sm font-semibold text-[var(--cloak-text)]">End-to-End Encrypted Channel</h3>
+            <p className="text-xs text-[var(--cloak-text-dim)] max-w-sm mt-1">
               Messages, voice notes, and attachments are encrypted on your device before transmission.
             </p>
           </div>
@@ -301,9 +301,9 @@ export function MessageList({
                     }}
                     className="py-2 flex items-center gap-3"
                   >
-                    <div className="flex-1 h-px bg-[#22283a]" />
-                    <span className="text-[11px] font-medium text-[#8d96ad] px-2">{row.label}</span>
-                    <div className="flex-1 h-px bg-[#22283a]" />
+                    <div className="flex-1 h-px bg-[var(--cloak-border)]" />
+                    <span className="text-[11px] font-medium text-[var(--cloak-text-dim)] px-2">{row.label}</span>
+                    <div className="flex-1 h-px bg-[var(--cloak-border)]" />
                   </div>
                 );
               }
@@ -327,19 +327,19 @@ export function MessageList({
                     width: '100%',
                     transform: `translateY(${vRow.start}px)`,
                   }}
-                  className={`group relative rounded-xl px-3 hover:bg-[#161a26]/85 focus-within:bg-[#161a26]/85 ${
+                  className={`group relative rounded-[10px] px-3 hover:bg-[var(--cloak-bg-hover)] focus-within:bg-[var(--cloak-bg-hover)] ${
                     compact ? 'py-1' : 'pt-2.5 pb-1.5 mt-1'
                   }`}
                 >
                   {/* Hover / Focus Contextual Action Strip (plain buttons, no role="menu") */}
-                  <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity absolute right-3 -top-3 z-10 flex items-center gap-0.5 rounded-lg border border-[#2b334b] bg-[#141722] p-0.5 shadow-lg">
+                  <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity absolute right-3 -top-3 z-10 flex items-center gap-0.5 rounded-[8px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-0.5 shadow-sm">
                     {QUICK_EMOJIS.map((em) => (
                       <button
                         key={em}
                         type="button"
                         aria-label={`React ${em}`}
                         onClick={() => void onReact(msg, em)}
-                        className="px-1.5 py-1 text-xs rounded hover:bg-[#23293c] cursor-pointer"
+                        className="px-1.5 py-1 text-xs rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
                       >
                         {em}
                       </button>
@@ -349,7 +349,7 @@ export function MessageList({
                       title="Reply"
                       aria-label="Reply to message"
                       onClick={() => onReply(msg)}
-                      className="p-1.5 text-[#9aa3b8] hover:text-white rounded hover:bg-[#23293c] cursor-pointer"
+                      className="p-1.5 text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
                     >
                       <CornerUpRight className="w-3.5 h-3.5" />
                     </button>
@@ -358,7 +358,7 @@ export function MessageList({
                       title="Thread"
                       aria-label="Open thread"
                       onClick={() => onOpenThread(msg)}
-                      className="p-1.5 text-[#9aa3b8] hover:text-white rounded hover:bg-[#23293c] cursor-pointer"
+                      className="p-1.5 text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />
                     </button>
@@ -367,7 +367,7 @@ export function MessageList({
                       title="Forward"
                       aria-label="Forward message"
                       onClick={() => onForward(msg)}
-                      className="p-1.5 text-[#9aa3b8] hover:text-white rounded hover:bg-[#23293c] cursor-pointer"
+                      className="p-1.5 text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
                     >
                       <Forward className="w-3.5 h-3.5" />
                     </button>
@@ -376,8 +376,8 @@ export function MessageList({
                       title={isBookmarked ? 'Remove bookmark' : 'Bookmark locally'}
                       aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
                       onClick={() => void onToggleBookmark(msg)}
-                      className={`p-1.5 rounded hover:bg-[#23293c] cursor-pointer ${
-                        isBookmarked ? 'text-[#fbbf24]' : 'text-[#9aa3b8] hover:text-white'
+                      className={`p-1.5 rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer ${
+                        isBookmarked ? 'text-[var(--cloak-warn-text)]' : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]'
                       }`}
                     >
                       <Bookmark className="w-3.5 h-3.5" />
@@ -388,8 +388,8 @@ export function MessageList({
                         title={msg.isPinned ? 'Unpin' : 'Pin message'}
                         aria-label={msg.isPinned ? 'Unpin message' : 'Pin message'}
                         onClick={() => void onTogglePin(msg)}
-                        className={`p-1.5 rounded hover:bg-[#23293c] cursor-pointer ${
-                          msg.isPinned ? 'text-[#a5b4fc]' : 'text-[#9aa3b8] hover:text-white'
+                        className={`p-1.5 rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer ${
+                          msg.isPinned ? 'text-[var(--cloak-accent-text)]' : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]'
                         }`}
                       >
                         {msg.isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
@@ -401,7 +401,7 @@ export function MessageList({
                         title="Edit"
                         aria-label="Edit message"
                         onClick={() => onEdit(msg)}
-                        className="p-1.5 text-[#9aa3b8] hover:text-white rounded hover:bg-[#23293c] cursor-pointer"
+                        className="p-1.5 text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
@@ -411,7 +411,7 @@ export function MessageList({
                       title="Delete for me"
                       aria-label="Delete for me"
                       onClick={() => void onDelete(msg, 'me')}
-                      className="p-1.5 text-[#9aa3b8] hover:text-[#fbbf24] rounded hover:bg-[#23293c] cursor-pointer"
+                      className="p-1.5 text-[var(--cloak-text-muted)] hover:text-[var(--cloak-warn-text)] rounded hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
                     >
                       <UserX className="w-3.5 h-3.5" />
                     </button>
@@ -421,7 +421,7 @@ export function MessageList({
                         title="Delete for everyone"
                         aria-label="Delete for everyone"
                         onClick={() => setConfirmDeleteEveryone(msg)}
-                        className="p-1.5 text-[#f87171] hover:bg-[#3a1a21] rounded cursor-pointer"
+                        className="p-1.5 text-[var(--cloak-danger-text)] hover:bg-[var(--cloak-danger-soft)] rounded cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -430,8 +430,8 @@ export function MessageList({
 
                   {/* Reply Preview */}
                   {msg.replyToMessageId && (
-                    <div className="ml-12 mb-1 pl-2.5 border-l-2 border-[#7c6cff]/60 text-xs text-[#9aa3b8] truncate">
-                      <span className="font-medium text-[#c4b5fd] mr-1.5">
+                    <div className="ml-12 mb-1 pl-2.5 border-l-2 border-[var(--cloak-accent)] text-xs text-[var(--cloak-text-muted)] truncate">
+                      <span className="font-medium text-[var(--cloak-accent-text)] mr-1.5">
                         {msg.replyPreviewSender || 'Reply'}:
                       </span>
                       {msg.replyPreviewText || 'Encrypted message'}
@@ -447,7 +447,7 @@ export function MessageList({
                         size="md"
                       />
                     ) : (
-                      <span className="w-9 shrink-0 text-[10px] text-[#64748b] text-right pt-0.5 opacity-0 group-hover:opacity-100">
+                      <span className="w-9 shrink-0 text-[10px] text-[var(--cloak-text-dim)] text-right pt-0.5 opacity-0 group-hover:opacity-100">
                         {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
@@ -455,20 +455,20 @@ export function MessageList({
                     <div className="min-w-0 flex-1">
                       {!compact && (
                         <div className="flex items-center flex-wrap gap-2 mb-0.5">
-                          <span className="text-sm font-semibold text-[#f1f3f9]">{senderName}</span>
-                          <time className="text-[11px] text-[#8d96ad]" dateTime={msg.createdAt}>
+                          <span className="text-sm font-semibold text-[var(--cloak-text)]">{senderName}</span>
+                          <time className="text-[11px] text-[var(--cloak-text-dim)]" dateTime={msg.createdAt}>
                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </time>
-                          {msg.editedAt && <span className="text-[10px] text-[#8d96ad]">(edited)</span>}
+                          {msg.editedAt && <span className="text-[10px] text-[var(--cloak-text-dim)]">(edited)</span>}
                           {msg.isPinned === 1 && (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] text-[#a5b4fc]">
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--cloak-accent-text)]">
                               <Pin className="w-2.5 h-2.5" /> Pinned
                             </span>
                           )}
                           {msg.expiresAt && (
                             <span
                               title={`Expires ${new Date(msg.expiresAt).toLocaleString()}`}
-                              className="inline-flex items-center gap-0.5 text-[10px] text-[#38bdf8]"
+                              className="inline-flex items-center gap-0.5 text-[10px] text-[var(--cloak-info-text)]"
                             >
                               <Timer className="w-2.5 h-2.5" /> Disappearing
                             </span>
@@ -476,16 +476,16 @@ export function MessageList({
                           {!msg.signatureVerified && (
                             <span
                               title="Sender signature not verified"
-                              className="inline-flex items-center gap-0.5 text-[10px] text-[#f59e0b]"
+                              className="inline-flex items-center gap-0.5 text-[10px] text-[var(--cloak-warn-text)]"
                             >
                               <ShieldAlert className="w-3 h-3" /> Unverified
                             </span>
                           )}
                           {msg.localStatus === 'sending' && (
-                            <span className="text-[10px] text-[#9aa3b8]">Sending...</span>
+                            <span className="text-[10px] text-[var(--cloak-text-muted)]">Sending...</span>
                           )}
                           {msg.localStatus === 'sent' && isOwn && (
-                            <span title="Delivered to server event log" className="text-[#34d399]">
+                            <span title="Delivered to server event log" className="text-[var(--cloak-success-text)]">
                               <Check className="w-3 h-3" />
                             </span>
                           )}
@@ -499,7 +499,7 @@ export function MessageList({
                       ))}
 
                       {msg.localStatus === 'failed' && (
-                        <div className="mt-1.5 flex items-center gap-2 text-xs text-[#fca5a5]">
+                        <div className="mt-1.5 flex items-center gap-2 text-xs text-[var(--cloak-danger-text)]">
                           <span>Failed to deliver</span>
                           <Button size="sm" variant="secondary" onClick={() => void onRetry(msg)}>
                             <RotateCcw className="w-3 h-3" /> Retry
@@ -516,10 +516,10 @@ export function MessageList({
                                 key={r.emoji}
                                 type="button"
                                 onClick={() => void onReact(msg, r.emoji)}
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs cursor-pointer cloak-transition ${
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs cursor-pointer transition-colors ${
                                   reacted
-                                    ? 'bg-[#7c6cff]/25 border border-[#7c6cff]/60 text-white'
-                                    : 'bg-[#1a1f2e] border border-[#2a3146] text-[#cbd5e1] hover:border-[#414c6b]'
+                                    ? 'bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] text-[var(--cloak-accent-text)]'
+                                    : 'bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] hover:border-[var(--cloak-border-strong)]'
                                 }`}
                               >
                                 <span>{r.emoji}</span>
@@ -539,7 +539,7 @@ export function MessageList({
       </div>
 
       {/* Live Typing Status Bar */}
-      <div className="h-6 px-4 flex items-center text-[11px] text-[#9aa3b8]" aria-live="polite">
+      <div className="h-6 px-4 flex items-center text-[11px] text-[var(--cloak-text-muted)]" aria-live="polite">
         {typingNames.length > 0 && (
           <span>
             {typingNames.join(', ')} {typingNames.length === 1 ? 'is' : 'are'} typing encrypted message...

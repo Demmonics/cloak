@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { DISAPPEARING_MESSAGE_OPTIONS } from '@cloak/config';
 import { Button, ModalDialog } from '@cloak/ui';
+import { ThemeToggle } from '../components/ThemeToggle.js';
 import { P2pGhostSettingsModal } from '../components/p2p/P2pGhostSettingsModal.js';
 import { PdfReaderShell } from '../components/pdf/PdfReaderShell.js';
 import { P2pStealthSettingsModal } from '../components/stealth/P2pStealthSettingsModal.js';
@@ -94,7 +95,7 @@ function SafeMarkdown({ text }: { text: string }) {
 
   return (
     <div
-      className="cloak-md text-sm text-[#e2e8f0] leading-relaxed break-words"
+      className="cloak-md text-sm text-[var(--cloak-text-body)] leading-relaxed break-words"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -1225,8 +1226,8 @@ export function P2pWorkspacePage() {
           topic: undefined,
         })),
         participants: [
-          { deviceId: status.deviceId, displayName: status.displayName, avatarColor: '#7c6cff' },
-          ...peers.map((p) => ({ deviceId: p.deviceId, displayName: p.displayName, avatarColor: '#38bdf8' })),
+          { deviceId: status.deviceId, displayName: status.displayName, avatarColor: '#0f766e' },
+          ...peers.map((p) => ({ deviceId: p.deviceId, displayName: p.displayName, avatarColor: '#0284c7' })),
         ],
         messages: await Promise.all(
           messages.map(async (m) => ({
@@ -1238,7 +1239,7 @@ export function P2pWorkspacePage() {
               m.senderDeviceId === status.deviceId
                 ? status.displayName
                 : (peers.find((p) => p.deviceId === m.senderDeviceId)?.displayName ?? m.senderDeviceId.slice(0, 8)),
-            senderAvatarColor: '#7c6cff',
+            senderAvatarColor: '#0f766e',
             createdAtUtc: m.createdAt,
             editedAtUtc: m.editedAt,
             expiresAtUtc: m.expiresAt,
@@ -1364,21 +1365,24 @@ export function P2pWorkspacePage() {
 
   if (unavailableReason) {
     return (
-      <main className="min-h-screen bg-[#0c0e14] text-[#f1f3f9] flex items-center justify-center p-6">
-        <div className="max-w-lg rounded-2xl border border-[#262c3f] bg-[#141722] p-6 space-y-4">
-          <div className="flex items-center gap-3 text-[#38bdf8]">
-            <ShieldCheck className="w-6 h-6" />
-            <h1 className="text-lg font-semibold text-white">Cloak Direct P2P Desktop Mode</h1>
+      <main className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex items-center justify-center p-6">
+        <div className="max-w-lg rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-6 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 text-[var(--cloak-accent-text)]">
+              <ShieldCheck className="w-6 h-6" />
+              <h1 className="text-lg font-semibold text-[var(--cloak-text)]">Cloak Direct P2P Desktop Mode</h1>
+            </div>
+            <ThemeToggle />
           </div>
-          <p className="text-sm text-[#cbd5e1] leading-relaxed">{unavailableReason}</p>
-          <div className="rounded-lg bg-[#0d1017] border border-[#262c3f] p-3 font-mono text-xs text-[#a5b4fc]">
+          <p className="text-sm text-[var(--cloak-text-body)] leading-relaxed">{unavailableReason}</p>
+          <div className="rounded-[8px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-3 font-mono text-xs text-[var(--cloak-accent-text)]">
             cargo +stable-x86_64-pc-windows-gnu run --release -p cloak-desktop
           </div>
           <div className="flex gap-2">
-            <Link to="/" className="px-3 py-2 rounded-lg bg-[#7c6cff] text-white text-xs font-medium">
+            <Link to="/" className="px-3 py-2 rounded-[7px] bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)] text-xs font-medium">
               Open Browser Workspace
             </Link>
-            <Link to="/archive" className="px-3 py-2 rounded-lg bg-[#1e2334] text-[#cbd5e1] text-xs font-medium">
+            <Link to="/archive" className="px-3 py-2 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] text-xs font-medium">
               Open Offline Archive Viewer
             </Link>
           </div>
@@ -1391,7 +1395,7 @@ export function P2pWorkspacePage() {
     return (
       <main
         data-testid="stealth-booting"
-        className="min-h-screen bg-[#0d1017] text-[#94a3b8] flex items-center justify-center p-6 text-xs"
+        className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text-muted)] flex items-center justify-center p-6 text-xs"
       >
         Initializing local workspace...
       </main>
@@ -1424,25 +1428,25 @@ export function P2pWorkspacePage() {
     return (
       <main
         data-testid="stealth-lock-screen"
-        className="min-h-screen bg-[#0b0d14] text-[#f1f3f9] flex items-center justify-center p-6"
+        className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex items-center justify-center p-6"
       >
         {callState !== 'idle' && <audio ref={remoteKeepAliveAudioRef} autoPlay className="hidden" />}
-        <div className="max-w-md w-full rounded-2xl border border-[#2a3146] bg-[#141722] p-6 space-y-4 shadow-2xl">
-          <div className="mx-auto w-12 h-12 rounded-full bg-[#7c6cff]/15 border border-[#7c6cff]/40 flex items-center justify-center text-[#a5b4fc]">
+        <div className="max-w-md w-full rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-6 space-y-4">
+          <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
             <Lock className="w-6 h-6" />
           </div>
           <div className="text-center space-y-1">
-            <h1 className="text-base font-semibold text-white">
+            <h1 className="text-base font-semibold text-[var(--cloak-text)]">
               {stealthBootstrap.activeSurface === 'privacy_shield' ? 'Privacy Shield Active' : 'Workspace Locked'}
             </h1>
-            <p className="text-xs text-[#9aa3b8]">
+            <p className="text-xs text-[var(--cloak-text-muted)]">
               Local conversations and files remain sealed until unlocked.
               {callState !== 'idle' && stealthBootstrap.callSummary.inCall ? ' Active media session remains connected.' : ''}
             </p>
           </div>
 
           {stealthBootstrap.lockoutRemainingSeconds > 0 && (
-            <div className="rounded-lg border border-[#f59e0b]/40 bg-[#f59e0b]/10 px-3 py-2 text-xs text-[#fde68a]">
+            <div className="rounded-[8px] border border-[var(--cloak-warn-border)] bg-[var(--cloak-warn-soft)] px-3 py-2 text-xs text-[var(--cloak-warn-text)]">
               Too many incorrect unlock attempts. Try again in {stealthBootstrap.lockoutRemainingSeconds}s.
             </div>
           )}
@@ -1458,10 +1462,10 @@ export function P2pWorkspacePage() {
                         key={m}
                         type="button"
                         onClick={() => setLockScreenMethod(m)}
-                        className={`px-2.5 py-1 rounded text-[11px] font-medium cursor-pointer border ${
+                        className={`px-2.5 py-1 rounded-[7px] text-[11px] font-medium cursor-pointer border transition-colors ${
                           lockScreenMethod === m
-                            ? 'border-[#7c6cff] bg-[#7c6cff]/20 text-white'
-                            : 'border-[#2a3146] bg-[#0d1017] text-[#9aa3b8]'
+                            ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)] text-[var(--cloak-text)]'
+                            : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-input)] text-[var(--cloak-text-muted)]'
                         }`}
                       >
                         {m === 'passphrase' ? 'Passphrase' : m === 'pin' ? 'PIN' : 'Command'}
@@ -1474,7 +1478,7 @@ export function P2pWorkspacePage() {
                   onChange={(e) => setLockScreenSecret(e.target.value)}
                   placeholder="Enter unlock code or passphrase..."
                   aria-label="Stealth unlock secret"
-                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                   autoFocus
                 />
                 {lockScreenNeedSecond && (
@@ -1484,7 +1488,7 @@ export function P2pWorkspacePage() {
                     onChange={(e) => setLockScreenSecondFactor(e.target.value)}
                     placeholder="Enter secondary passphrase factor..."
                     aria-label="Secondary passphrase factor"
-                    className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+                    className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                   />
                 )}
               </>
@@ -1495,12 +1499,12 @@ export function P2pWorkspacePage() {
                 onChange={(e) => setLockScreenRecovery(e.target.value)}
                 placeholder="Enter offline recovery code..."
                 aria-label="Offline recovery code"
-                className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm font-mono text-white"
+                className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm font-mono text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                 autoFocus
               />
             )}
 
-            {lockScreenMsg && <div className="text-xs text-[#fca5a5]">{lockScreenMsg}</div>}
+            {lockScreenMsg && <div className="text-xs text-[var(--cloak-danger-text)]">{lockScreenMsg}</div>}
 
             <div className="flex items-center justify-between gap-2">
               <button
@@ -1509,7 +1513,7 @@ export function P2pWorkspacePage() {
                   setLockScreenUseRecovery((v) => !v);
                   setLockScreenMsg(null);
                 }}
-                className="text-[11px] text-[#a5b4fc] hover:underline cursor-pointer"
+                className="text-[11px] text-[var(--cloak-accent-text)] hover:underline cursor-pointer"
               >
                 {lockScreenUseRecovery ? 'Use secret code' : 'Use recovery key'}
               </button>
@@ -1531,19 +1535,19 @@ export function P2pWorkspacePage() {
   const hideRoomTitle = isMasked && ghostPolicy.hideSensitiveNames;
 
   return (
-    <div className="h-screen flex bg-[#0d0f17] text-[#f1f3f9] overflow-hidden relative">
+    <div className="h-screen flex bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] overflow-hidden relative">
       {/* Left Sidebar: Node Info + Network Diagnostics + Rooms + Direct Pairing */}
       <aside
         className={`${
           sidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex' : 'hidden lg:flex'
-        } w-80 max-w-[85vw] shrink-0 bg-[#111420] border-r border-[#1f2435] flex-col overflow-y-auto p-3 gap-3`}
+        } w-80 max-w-[85vw] shrink-0 bg-[var(--cloak-bg-sidebar)] border-r border-[var(--cloak-border)] flex-col overflow-y-auto p-3 gap-3`}
       >
-        <div className="rounded-xl border border-[#262c3f] bg-[#161a28] p-3 space-y-1.5">
+        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-[#a5b4fc] uppercase tracking-wider">Local SQLite Vault</span>
+            <span className="text-[11px] font-semibold text-[var(--cloak-accent-text)] uppercase tracking-wider">Local SQLite Vault</span>
             <div className="flex items-center gap-1.5">
               {diagnostics?.vaultDpapiProtected && (
-                <span className="px-1.5 py-0.5 rounded bg-[#22c55e]/15 text-[#34d399] text-[10px] font-medium">
+                <span className="px-1.5 py-0.5 rounded-[5px] border border-[var(--cloak-success-border)] bg-[var(--cloak-success-soft)] text-[var(--cloak-success-text)] text-[10px] font-mono font-medium">
                   DPAPI
                 </span>
               )}
@@ -1551,38 +1555,38 @@ export function P2pWorkspacePage() {
                 type="button"
                 aria-label="Close sidebar"
                 onClick={() => setSidebarOpen(false)}
-                className="lg:hidden text-[#9aa3b8] hover:text-white cursor-pointer"
+                className="lg:hidden text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <div className="text-sm font-medium text-white">
+          <div className="text-sm font-semibold text-[var(--cloak-text)]">
             {hideRoomTitle ? '•••••• (Protected)' : status?.displayName}
           </div>
-          <div className="text-[11px] font-mono text-[#8d96ad] truncate" title={status?.listenAddr}>
+          <div className="text-[11px] font-mono text-[var(--cloak-text-dim)] truncate" title={status?.listenAddr}>
             Listen: {status?.listenAddr}
           </div>
           {diagnostics && (
-            <div className="text-[11px] text-[#9aa3b8] leading-snug">
-              LAN IPv4: <span className="text-[#34d399] font-mono">{diagnostics.primaryLanIp ?? 'none'}</span>
+            <div className="text-[11px] text-[var(--cloak-text-muted)] leading-snug">
+              LAN IPv4: <span className="text-[var(--cloak-success-text)] font-mono">{diagnostics.primaryLanIp ?? 'none'}</span>
               {diagnostics.primaryIpv6 ? ` · IPv6 ready` : ''}
             </div>
           )}
           <div className="flex items-center gap-2 pt-1 text-[11px]">
-            <Link to="/archive" className="inline-flex items-center gap-1 text-[#38bdf8] hover:underline">
+            <Link to="/archive" className="inline-flex items-center gap-1 text-[var(--cloak-info-text)] hover:underline">
               <Archive className="w-3 h-3" /> /archive
             </Link>
-            <span className="text-[#475569]">·</span>
-            <Link to="/" className="text-[#9aa3b8] hover:text-white">
+            <span className="text-[var(--cloak-border-strong)]">·</span>
+            <Link to="/" className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]">
               Server Mode
             </Link>
           </div>
         </div>
 
         {/* Connectivity & Firewall Diagnostics */}
-        <div className="rounded-xl border border-[#262c3f] bg-[#161a28] p-3 space-y-2 text-xs">
-          <label className="flex items-center gap-2 cursor-pointer text-[#e2e8f0]">
+        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2 text-xs">
+          <label className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)]">
             <input
               type="checkbox"
               checked={strictDirectOnly}
@@ -1595,13 +1599,13 @@ export function P2pWorkspacePage() {
               value={stunUrl}
               onChange={(e) => setStunUrl(e.target.value)}
               placeholder="stun:stun.example.org:3478"
-              className="w-full rounded-lg bg-[#0c0e14] border border-[#2a3146] px-2 py-1 text-xs text-white"
+              className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
             />
           )}
           {diagnostics && (
-            <div className="text-[11px] text-[#9aa3b8] border-t border-[#262c3f] pt-1.5">
+            <div className="text-[11px] text-[var(--cloak-text-muted)] border-t border-[var(--cloak-border)] pt-1.5">
               Firewall:{' '}
-              <span className={diagnostics.windowsFirewallRulePresent ? 'text-[#34d399]' : 'text-[#fbbf24]'}>
+              <span className={diagnostics.windowsFirewallRulePresent ? 'text-[var(--cloak-success-text)]' : 'text-[var(--cloak-warn-text)]'}>
                 {diagnostics.firewallNote}
               </span>
             </div>
@@ -1610,13 +1614,13 @@ export function P2pWorkspacePage() {
 
         {/* Rooms */}
         <div className="space-y-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#9aa3b8]">Local P2P Rooms</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">Local P2P Rooms</div>
           <form onSubmit={handleCreateRoom} className="flex gap-1.5">
             <input
               value={newRoomName}
               onChange={(e) => setNewRoomName(e.target.value)}
               placeholder="New private room..."
-              className="flex-1 rounded-lg bg-[#0d1017] border border-[#2a3146] px-2.5 py-1.5 text-xs text-white min-w-0"
+              className="flex-1 rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] min-w-0"
             />
             <Button size="sm" type="submit" aria-label="Create P2P Room">
               <Plus className="w-3.5 h-3.5" />
@@ -1631,20 +1635,22 @@ export function P2pWorkspacePage() {
                   setActiveRoomId(r.id);
                   setSidebarOpen(false);
                 }}
-                className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium flex items-center justify-between cursor-pointer ${
-                  r.id === activeRoomId ? 'bg-[#7c6cff] text-white' : 'bg-[#171b28] text-[#cbd5e1] hover:bg-[#1f2536]'
+                className={`w-full text-left px-2.5 py-2 rounded-[7px] text-xs font-medium flex items-center justify-between cursor-pointer border transition-colors ${
+                  r.id === activeRoomId
+                    ? 'bg-[var(--cloak-bg-active)] border-[var(--cloak-border)] border-l-2 border-l-[var(--cloak-accent)] text-[var(--cloak-text)]'
+                    : 'bg-[var(--cloak-bg-surface)] border-transparent text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-hover)]'
                 }`}
               >
                 <span className="truncate">{hideRoomTitle ? 'Protected Room' : r.name}</span>
-                <span className="text-[10px] opacity-80">E{r.currentEpoch}</span>
+                <span className="font-mono text-[10px] text-[var(--cloak-text-muted)]">E{r.currentEpoch}</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* Direct Pairing Ticket */}
-        <div className="rounded-xl border border-[#262c3f] bg-[#161a28] p-3 space-y-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#9aa3b8]">Direct Pairing Ticket</div>
+        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">Direct Pairing Ticket</div>
           {activeRoomId && (
             <>
               {diagnostics && diagnostics.interfaces.length > 0 && (
@@ -1652,7 +1658,7 @@ export function P2pWorkspacePage() {
                   aria-label="Advertised interface address"
                   value={advertisedAddr}
                   onChange={(e) => setAdvertisedAddr(e.target.value)}
-                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-2 py-1 text-[11px] text-[#cbd5e1]"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-[11px] text-[var(--cloak-text-body)]"
                 >
                   <option value="">Loopback Default ({status?.listenAddr})</option>
                   {diagnostics.interfaces.map((iface) => (
@@ -1666,7 +1672,7 @@ export function P2pWorkspacePage() {
                 value={advertisedAddr}
                 onChange={(e) => setAdvertisedAddr(e.target.value)}
                 placeholder={`Optional LAN/IPv6 host:port`}
-                className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-2 py-1 text-[11px] text-white"
+                className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-[11px] text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
               />
               <div className="flex gap-1.5">
                 <Button size="sm" variant="secondary" onClick={() => void handleGenerateTicket()} className="flex-1">
@@ -1693,18 +1699,18 @@ export function P2pWorkspacePage() {
                   rows={2}
                   value={ticketUri}
                   aria-label="Shareable pairing ticket"
-                  className="w-full rounded-lg bg-[#0c0e14] border border-[#262c3f] p-1.5 font-mono text-[10px] text-[#a5b4fc]"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-1.5 font-mono text-[10px] text-[var(--cloak-accent-text)]"
                 />
               )}
             </>
           )}
 
-          <form onSubmit={handlePair} className="space-y-1.5 pt-2 border-t border-[#262c3f]">
+          <form onSubmit={handlePair} className="space-y-1.5 pt-2 border-t border-[var(--cloak-border)]">
             <input
               value={pairUri}
               onChange={(e) => setPairUri(e.target.value)}
               placeholder="Paste peer cloakp2p://... ticket"
-              className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-2 py-1.5 text-xs text-white"
+              className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
             />
             <Button size="sm" variant="primary" type="submit" className="w-full">
               Pair & Connect Directly
@@ -1714,22 +1720,22 @@ export function P2pWorkspacePage() {
 
         {/* Peers */}
         <div className="space-y-1.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#9aa3b8]">Paired Peers ({peers.length})</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">Paired Peers ({peers.length})</div>
           {peers.map((p) => {
             const pState = status?.peerStates?.[p.deviceId] ?? (status?.activePeerIds.includes(p.deviceId) ? 'direct_connected' : 'disconnected');
             return (
-              <div key={p.deviceId} className="rounded-lg bg-[#161a28] border border-[#242a3d] p-2 text-xs flex items-center justify-between gap-2">
+              <div key={p.deviceId} className="rounded-[8px] bg-[var(--cloak-bg-surface)] border border-[var(--cloak-border)] p-2 text-xs flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="font-medium text-white truncate">
+                  <div className="font-medium text-[var(--cloak-text)] truncate">
                     {hideRoomTitle ? 'Verified Peer' : p.displayName}
                   </div>
-                  <div className="text-[10px] text-[#8d96ad] truncate">{p.directAddr}</div>
+                  <div className="text-[10px] font-mono text-[var(--cloak-text-dim)] truncate">{p.directAddr}</div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {p.revoked ? (
-                    <span className="text-[10px] text-[#ef4444] font-semibold">Revoked</span>
+                    <span className="text-[10px] text-[var(--cloak-danger-text)] font-semibold">Revoked</span>
                   ) : pState === 'direct_connected' ? (
-                    <span className="text-[10px] text-[#34d399] inline-flex items-center gap-1">
+                    <span className="text-[10px] text-[var(--cloak-success-text)] inline-flex items-center gap-1">
                       <Wifi className="w-3 h-3" /> Direct
                     </span>
                   ) : (
@@ -1738,7 +1744,7 @@ export function P2pWorkspacePage() {
                       onClick={() =>
                         void p2pApi.connectPeer(p.deviceId).catch((e) => setErrorBanner(e instanceof Error ? e.message : 'Connect failed'))
                       }
-                      className="text-[10px] text-[#fca5a5] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      className="text-[10px] text-[var(--cloak-danger-text)] hover:underline inline-flex items-center gap-1 cursor-pointer"
                     >
                       <WifiOff className="w-3 h-3" /> {pState === 'reconnecting' ? 'Retrying' : 'Retry'}
                     </button>
@@ -1756,7 +1762,7 @@ export function P2pWorkspacePage() {
                           })
                           .catch((e) => setErrorBanner(e instanceof Error ? e.message : 'Revoke failed'))
                       }
-                      className="text-[10px] text-[#9aa3b8] hover:text-[#fca5a5] cursor-pointer"
+                      className="text-[10px] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-danger-text)] cursor-pointer"
                     >
                       Revoke
                     </button>
@@ -1769,19 +1775,19 @@ export function P2pWorkspacePage() {
       </aside>
 
       {/* Main P2P Workspace */}
-      <main className="flex-1 flex flex-col min-w-0 bg-[#141722] relative">
-        <header className="px-3 sm:px-4 py-2.5 border-b border-[#1f2435] bg-[#12151f] flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 bg-[var(--cloak-bg-void)] relative">
+        <header className="px-3 sm:px-4 py-2.5 border-b border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <button
               type="button"
               aria-label="Open P2P sidebar"
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-1.5 rounded-lg bg-[#1a1f2e] text-[#cbd5e1] cursor-pointer"
+              className="lg:hidden p-1.5 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] cursor-pointer"
             >
               <Menu className="w-4 h-4" />
             </button>
-            <Hash className="w-4 h-4 text-[#a5b4fc] shrink-0" />
-            <h1 className="text-sm font-semibold text-white truncate">
+            <Hash className="w-4 h-4 text-[var(--cloak-accent-text)] shrink-0" />
+            <h1 className="text-sm font-semibold text-[var(--cloak-text)] truncate">
               {hideRoomTitle ? 'Protected Conversation' : (activeRoom?.name ?? 'Select or Create a Room')}
             </h1>
             <button
@@ -1790,8 +1796,8 @@ export function P2pWorkspacePage() {
               data-testid="ghost-status-pill"
               className={`px-2 py-0.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer border ${
                 ghostPolicy.enabled || activeRoomOverride
-                  ? 'border-[#7c6cff]/60 bg-[#7c6cff]/15 text-[#c4b5fd]'
-                  : 'border-[#2a3146] bg-[#171b28] text-[#9aa3b8]'
+                  ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
+                  : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text-muted)]'
               }`}
             >
               <Settings2 className="w-3 h-3" />
@@ -1803,8 +1809,8 @@ export function P2pWorkspacePage() {
               data-testid="stealth-settings-btn"
               className={`px-2 py-0.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer border ${
                 stealthBootstrap.stealthEnabled
-                  ? 'border-[#38bdf8]/60 bg-[#38bdf8]/15 text-[#bae6fd]'
-                  : 'border-[#2a3146] bg-[#171b28] text-[#9aa3b8]'
+                  ? 'border-[var(--cloak-info-border)] bg-[var(--cloak-info-soft)] text-[var(--cloak-info-text)]'
+                  : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text-muted)]'
               }`}
             >
               <FileText className="w-3 h-3" />
@@ -1813,6 +1819,7 @@ export function P2pWorkspacePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
+            <ThemeToggle />
             {!isMasked && (
               <>
                 <Button
@@ -1849,13 +1856,13 @@ export function P2pWorkspacePage() {
             {activeRoomId && !isMasked && (
               <>
                 <div className="relative hidden sm:block">
-                  <Search className="w-3.5 h-3.5 text-[#9aa3b8] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Search className="w-3.5 h-3.5 text-[var(--cloak-text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search local history..."
                     aria-label="Search decrypted messages"
-                    className="pl-7 pr-2 py-1 rounded-lg bg-[#0d1017] border border-[#262c3f] text-xs text-white w-40"
+                    className="pl-7 pr-2 py-1 rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] w-40"
                   />
                 </div>
                 <Button size="sm" variant="secondary" onClick={() => void startDirectCall(false)} disabled={callState !== 'idle'}>
@@ -1884,7 +1891,7 @@ export function P2pWorkspacePage() {
         </header>
 
         {errorBanner && (
-          <div role="alert" className="mx-4 mt-3 rounded-lg border border-[#ef4444]/50 bg-[#ef4444]/10 px-3 py-2 text-xs text-[#fca5a5] flex items-center justify-between gap-2">
+          <div role="alert" className="mx-4 mt-3 rounded-[8px] border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] px-3 py-2 text-xs text-[var(--cloak-danger-text)] flex items-center justify-between gap-2">
             <span className="flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 shrink-0" />
               {errorBanner}
@@ -1895,7 +1902,7 @@ export function P2pWorkspacePage() {
           </div>
         )}
         {infoBanner && (
-          <div className="mx-4 mt-3 rounded-lg border border-[#22c55e]/40 bg-[#22c55e]/10 px-3 py-2 text-xs text-[#86efac] flex items-center justify-between">
+          <div className="mx-4 mt-3 rounded-[8px] border border-[var(--cloak-success-border)] bg-[var(--cloak-success-soft)] px-3 py-2 text-xs text-[var(--cloak-success-text)] flex items-center justify-between">
             <span>{infoBanner}</span>
             <button type="button" onClick={() => setInfoBanner(null)} className="text-xs underline cursor-pointer">
               Dismiss
@@ -1903,7 +1910,7 @@ export function P2pWorkspacePage() {
           </div>
         )}
         {!isMasked && ghostState?.lastCleanup && (
-          <div className="mx-4 mt-3 rounded-lg border border-[#7c6cff]/40 bg-[#7c6cff]/10 px-3 py-1.5 text-[11px] text-[#c4b5fd] flex items-center justify-between gap-2">
+          <div className="mx-4 mt-3 rounded-[8px] border border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)] px-3 py-1.5 text-[11px] text-[var(--cloak-accent-text)] flex items-center justify-between gap-2">
             <span>
               Ghost ({ghostState.lastCleanup.mode}): cleared {ghostState.lastCleanup.deletedMessages} local message(s),
               purged {ghostState.lastCleanup.deletedAttachments} attachment blob(s), preserved{' '}
@@ -1959,15 +1966,15 @@ export function P2pWorkspacePage() {
         {isMasked ? (
           <div
             data-testid="ghost-privacy-overlay"
-            className="flex-1 flex items-center justify-center p-6 bg-[#0b0d14]"
+            className="flex-1 flex items-center justify-center p-6 bg-[var(--cloak-bg-void)]"
           >
-            <div className="max-w-md w-full rounded-2xl border border-[#2a3146] bg-[#141722] p-6 space-y-4 text-center shadow-2xl">
-              <div className="mx-auto w-12 h-12 rounded-full bg-[#7c6cff]/15 border border-[#7c6cff]/40 flex items-center justify-center text-[#a5b4fc]">
+            <div className="max-w-md w-full rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-6 space-y-4 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
                 <ShieldOff className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h2 className="text-base font-semibold text-white">Ghost Privacy Shield Active</h2>
-                <p className="text-xs text-[#9aa3b8] leading-relaxed">
+                <h2 className="text-base font-semibold text-[var(--cloak-text)]">Ghost Privacy Shield Active</h2>
+                <p className="text-xs text-[var(--cloak-text-muted)] leading-relaxed">
                   Decrypted conversation contents are concealed on this PC while Cloak is inactive or locked.
                   {callState !== 'idle' && ' Direct encrypted call remains connected.'}
                 </p>
@@ -1980,9 +1987,9 @@ export function P2pWorkspacePage() {
                     onChange={(e) => setPinUnlockInput(e.target.value)}
                     placeholder="Enter Ghost Privacy PIN..."
                     aria-label="Ghost Privacy PIN"
-                    className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+                    className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                   />
-                  {pinUnlockError && <div className="text-xs text-[#fca5a5]">{pinUnlockError}</div>}
+                  {pinUnlockError && <div className="text-xs text-[var(--cloak-danger-text)]">{pinUnlockError}</div>}
                   <Button type="submit" variant="primary" className="w-full">
                     <Lock className="w-3.5 h-3.5" /> Unlock Cloak View
                   </Button>
@@ -2000,9 +2007,9 @@ export function P2pWorkspacePage() {
             </div>
           </div>
         ) : (
-          <div ref={messageListRef} className="flex-1 overflow-y-auto p-4 space-y-3" data-testid="p2p-message-list">
+          <div ref={messageListRef} className="flex-1 overflow-y-auto p-4 space-y-2.5" data-testid="p2p-message-list">
             {filteredMessages.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-[#8d96ad]">
+              <div className="h-full flex items-center justify-center text-xs text-[var(--cloak-text-dim)]">
                 {messages.length === 0
                   ? 'No local messages visible in this channel.'
                   : 'No local messages match your search filter.'}
@@ -2012,42 +2019,42 @@ export function P2pWorkspacePage() {
                 <article
                   key={m.id}
                   data-message-id={m.id}
-                  className="rounded-xl border border-[#23293c] bg-[#181c29] p-3 space-y-1.5"
+                  className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-1.5"
                 >
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <div className="flex flex-wrap items-center gap-2">
-                      <strong className="text-white">
+                      <strong className="text-[var(--cloak-text)] font-semibold">
                         {m.senderDeviceId === status?.deviceId
                           ? status.displayName
                           : (peers.find((p) => p.deviceId === m.senderDeviceId)?.displayName ?? m.senderDeviceId.slice(0, 8))}
                       </strong>
-                      <span className="text-[11px] text-[#8d96ad]">{new Date(m.createdAt).toLocaleTimeString()}</span>
+                      <span className="font-mono text-[11px] text-[var(--cloak-text-dim)]">{new Date(m.createdAt).toLocaleTimeString()}</span>
                       {m.signatureVerified && (
-                        <span title="Ed25519 signature verified" className="text-[#34d399] text-[10px]">
+                        <span title="Ed25519 signature verified" className="text-[var(--cloak-success-text)] text-[10px] font-medium">
                           ✓ Signed
                         </span>
                       )}
                       {m.viewedAt ? (
-                        <span className="text-[10px] text-[#94a3b8] inline-flex items-center gap-0.5" title="Viewed in local viewport">
+                        <span className="text-[10px] text-[var(--cloak-text-muted)] inline-flex items-center gap-0.5" title="Viewed in local viewport">
                           <Eye className="w-3 h-3" /> Viewed
                         </span>
                       ) : (
-                        <span className="text-[10px] text-[#38bdf8] inline-flex items-center gap-0.5" title="Not yet marked viewed">
+                        <span className="text-[10px] text-[var(--cloak-info-text)] inline-flex items-center gap-0.5" title="Not yet marked viewed">
                           <EyeOff className="w-3 h-3" /> Unread
                         </span>
                       )}
                       {m.expireOnLeave && (
-                        <span className="text-[10px] text-[#fbbf24]">· On-leave</span>
+                        <span className="text-[10px] text-[var(--cloak-warn-text)]">· On-leave</span>
                       )}
                       {m.expireAfterViewSeconds != null && (
-                        <span className="text-[10px] text-[#fbbf24]">· {m.expireAfterViewSeconds}s after view</span>
+                        <span className="text-[10px] text-[var(--cloak-warn-text)]">· {m.expireAfterViewSeconds}s after view</span>
                       )}
                       {m.expiresAt && (
-                        <span className="text-[10px] text-[#f59e0b]">
+                        <span className="text-[10px] text-[var(--cloak-warn-text)]">
                           · Exp {new Date(m.expiresAt).toLocaleTimeString()}
                         </span>
                       )}
-                      {m.editedAt && <span className="text-[10px] text-[#9aa3b8]">(edited)</span>}
+                      {m.editedAt && <span className="text-[10px] text-[var(--cloak-text-muted)]">(edited)</span>}
                     </div>
                     <button
                       type="button"
@@ -2055,21 +2062,21 @@ export function P2pWorkspacePage() {
                       onClick={() =>
                         void p2pApi.deleteMessage(m.roomId, m.id, 'everyone').then(() => refreshMessages(m.roomId, m.channelId))
                       }
-                      className="text-[#9aa3b8] hover:text-[#fca5a5] cursor-pointer"
+                      className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-danger-text)] cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   <SafeMarkdown text={m.text} />
                   {m.attachments.map((att) => (
-                    <div key={att.id} className="rounded-lg border border-[#2a3146] bg-[#10131d] px-2.5 py-1.5 text-xs flex items-center justify-between gap-2">
-                      <span className="text-[#cbd5e1] truncate">
+                    <div key={att.id} className="rounded-[7px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] px-2.5 py-1.5 text-xs flex items-center justify-between gap-2">
+                      <span className="text-[var(--cloak-text-body)] truncate">
                         {att.filename} ({(att.totalSizeBytes / 1024).toFixed(1)} KiB · SHA-256)
                       </span>
                       <button
                         type="button"
                         onClick={() => void handleDownloadAttachment(att.id, att.filename)}
-                        className="text-[#a5b4fc] hover:underline inline-flex items-center gap-1 cursor-pointer shrink-0"
+                        className="text-[var(--cloak-accent-text)] hover:underline inline-flex items-center gap-1 cursor-pointer shrink-0"
                       >
                         <Download className="w-3 h-3" /> Save
                       </button>
@@ -2082,7 +2089,7 @@ export function P2pWorkspacePage() {
         )}
 
         {activeRoomId && activeChannelId && !isMasked && (
-          <form onSubmit={handleSend} className="p-3 border-t border-[#1f2435] bg-[#12151f] flex flex-wrap items-center gap-2">
+          <form onSubmit={handleSend} className="p-3 border-t border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)] flex flex-wrap items-center gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -2097,7 +2104,7 @@ export function P2pWorkspacePage() {
               type="button"
               onClick={() => void handleNativeOrBrowserPick()}
               aria-label="Attach P2P file"
-              className="p-2 rounded-lg bg-[#1a1f2e] text-[#cbd5e1] cursor-pointer"
+              className="p-2 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
             >
               <Paperclip className="w-4 h-4" />
             </button>
@@ -2109,13 +2116,13 @@ export function P2pWorkspacePage() {
                   ? `Message (${pendingFiles.length + uploadedAttIds.length} file(s) staged)...`
                   : 'Direct encrypted message (stored in local SQLite)...'
               }
-              className="flex-1 min-w-[180px] rounded-lg bg-[#0d1017] border border-[#262c3f] px-3 py-2 text-sm text-white"
+              className="flex-1 min-w-[180px] rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
             />
             <select
               value={disappearPreset}
               onChange={(e) => setDisappearPreset(e.target.value)}
               aria-label="Disappearing preset"
-              className="rounded-lg bg-[#0d1017] border border-[#262c3f] px-2 py-2 text-xs text-[#cbd5e1]"
+              className="rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-2 text-xs text-[var(--cloak-text-body)]"
             >
               <option value="off">Persist (Local)</option>
               <option value="on_leave">On Leave Chat</option>
@@ -2135,7 +2142,7 @@ export function P2pWorkspacePage() {
                 value={customSeconds}
                 onChange={(e) => setCustomSeconds(e.target.value)}
                 aria-label="Custom disappearing seconds"
-                className="w-20 rounded-lg bg-[#0d1017] border border-[#262c3f] px-2 py-2 text-xs text-white"
+                className="w-20 rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-2 text-xs text-[var(--cloak-text)]"
               />
             )}
             <Button type="submit" variant="primary" size="sm">
@@ -2188,20 +2195,20 @@ export function P2pWorkspacePage() {
 
       <ModalDialog open={exportOpen} onClose={() => setExportOpen(false)} title="Export Encrypted Local Archive (.cloakexport)">
         <form onSubmit={handleExportLocal} className="space-y-3">
-          {exportErr && <div className="text-xs text-[#fca5a5]">{exportErr}</div>}
+          {exportErr && <div className="text-xs text-[var(--cloak-danger-text)]">{exportErr}</div>}
           <input
             type="password"
             value={exportPw}
             onChange={(e) => setExportPw(e.target.value)}
             placeholder="Strong export password (min 8 chars)"
-            className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+            className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
           />
           <input
             type="password"
             value={exportPw2}
             onChange={(e) => setExportPw2(e.target.value)}
             placeholder="Confirm password"
-            className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+            className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
           />
           <div className="flex justify-end gap-2">
             <Button variant="secondary" type="button" onClick={() => setExportOpen(false)}>

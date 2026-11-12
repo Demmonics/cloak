@@ -9,12 +9,12 @@ import {
 import { useAppStore } from '../store/useAppStore.js';
 
 const AVATAR_COLORS = [
-  '#7c6cff',
-  '#38bdf8',
+  '#0f766e',
+  '#0284c7',
   '#10b981',
-  '#f59e0b',
-  '#ec4899',
-  '#6366f1',
+  '#d97706',
+  '#be123c',
+  '#334155',
 ];
 
 const AVATAR_EMOJIS = ['🛡️', '🦊', '🦉', '⚡', '🛰️', '🌑', '🔮', '🗝️'];
@@ -92,17 +92,17 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
   };
 
   return (
-    <main className="min-h-screen bg-[#0c0e14] text-[#f1f3f9] flex items-center justify-center p-4">
-      <div className="w-full max-w-xl rounded-2xl border border-[#262c3f] bg-[#141722] shadow-2xl overflow-hidden">
-        <div className="px-6 py-5 border-b border-[#262c3f] bg-gradient-to-br from-[#191d2b] to-[#12151f]">
+    <main className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex items-center justify-center p-4">
+      <div className="w-full max-w-xl rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] overflow-hidden">
+        <div className="px-6 py-5 border-b border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)]">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#7c6cff]/20 border border-[#7c6cff]/40 flex items-center justify-center text-[#a5b4fc]">
+              <div className="w-10 h-10 rounded-[10px] bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold tracking-tight">Cloak Private Workspace</h1>
-                <p className="text-xs text-[#9aa3b8]">
+                <h1 className="text-lg font-semibold tracking-tight text-[var(--cloak-text)]">Cloak Private Workspace</h1>
+                <p className="text-xs text-[var(--cloak-text-muted)]">
                   Anonymous-first, end-to-end encrypted communication. No account required.
                 </p>
               </div>
@@ -110,13 +110,13 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
             <div className="flex flex-col sm:flex-row gap-2 shrink-0">
               <Link
                 to="/p2p"
-                className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[#38bdf8] bg-[#1e2334] border border-[#323a54] hover:bg-[#272e44]"
+                className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-2.5 py-1.5 rounded-[7px] text-xs text-[var(--cloak-info-text)] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] hover:bg-[var(--cloak-bg-hover)]"
               >
                 Direct P2P
               </Link>
               <Link
                 to="/archive"
-                className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[#a5b4fc] bg-[#1e2334] border border-[#323a54] hover:bg-[#272e44]"
+                className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-2.5 py-1.5 rounded-[7px] text-xs text-[var(--cloak-accent-text)] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] hover:bg-[var(--cloak-bg-hover)]"
               >
                 <Archive className="w-3.5 h-3.5" />
                 Open Archive
@@ -133,10 +133,10 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                 setMode('create');
                 setError(null);
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer cloak-transition ${
+              className={`px-3 py-1.5 rounded-[7px] text-xs font-medium cursor-pointer transition-colors ${
                 mode === 'create'
-                  ? 'bg-[#7c6cff] text-white'
-                  : 'bg-[#1a1f2e] text-[#9aa3b8] hover:text-white'
+                  ? 'bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)]'
+                  : 'bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5 inline mr-1.5" />
@@ -150,10 +150,10 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                 setMode('restore');
                 setError(null);
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer cloak-transition ${
+              className={`px-3 py-1.5 rounded-[7px] text-xs font-medium cursor-pointer transition-colors ${
                 mode === 'restore'
-                  ? 'bg-[#7c6cff] text-white'
-                  : 'bg-[#1a1f2e] text-[#9aa3b8] hover:text-white'
+                  ? 'bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)]'
+                  : 'bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]'
               }`}
             >
               <FolderKey className="w-3.5 h-3.5 inline mr-1.5" />
@@ -163,14 +163,14 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
         </div>
 
         <div className="p-6">
-          <div className="mb-4 rounded-xl bg-[#10131d] border border-[#23293c] p-3 text-xs text-[#a8b1c7] leading-relaxed">
+          <div className="mb-4 rounded-[10px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] p-3 text-xs text-[var(--cloak-text-body)] leading-relaxed">
             Your device generates an Ed25519 signing identity and X25519 key-exchange key locally.
-            If you clear browser storage without exporting a <code className="text-[#c4b5fd]">.cloakkey</code> backup,
+            If you clear browser storage without exporting a <code className="text-[var(--cloak-accent-text)]">.cloakkey</code> backup,
             room access cannot be recovered by the server.
           </div>
 
           {error && (
-            <div role="alert" className="mb-4 rounded-lg border border-[#ef4444]/50 bg-[#ef4444]/10 px-3 py-2 text-xs text-[#fca5a5]">
+            <div role="alert" className="mb-4 rounded-[8px] border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] px-3 py-2 text-xs text-[var(--cloak-danger-text)]">
               {error}
             </div>
           )}
@@ -178,7 +178,7 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
           {mode === 'create' ? (
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label htmlFor="onboard-display-name" className="block text-xs font-medium text-[#cbd5e1] mb-1.5">
+                <label htmlFor="onboard-display-name" className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">
                   Display Nickname (optional)
                 </label>
                 <input
@@ -188,13 +188,13 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="Anonymous"
-                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white placeholder-[#64748b] focus:border-[#7c6cff] focus:outline-none"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] focus:border-[var(--cloak-accent)] focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <span className="block text-xs font-medium text-[#cbd5e1] mb-1.5">Avatar Accent</span>
+                  <span className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">Avatar Accent</span>
                   <div className="flex flex-wrap gap-2">
                     {AVATAR_COLORS.map((color) => (
                       <button
@@ -204,8 +204,8 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                         aria-label={`Select color ${color}`}
                         aria-pressed={avatarColor === color}
                         style={{ backgroundColor: color }}
-                        className={`w-7 h-7 rounded-lg cursor-pointer ${
-                          avatarColor === color ? 'ring-2 ring-white ring-offset-2 ring-offset-[#141722]' : 'opacity-75 hover:opacity-100'
+                        className={`w-7 h-7 rounded-[7px] cursor-pointer ${
+                          avatarColor === color ? 'ring-2 ring-[var(--cloak-text)] ring-offset-2 ring-offset-[var(--cloak-bg-surface)]' : 'opacity-75 hover:opacity-100'
                         }`}
                       />
                     ))}
@@ -213,7 +213,7 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                 </div>
 
                 <div>
-                  <span className="block text-xs font-medium text-[#cbd5e1] mb-1.5">Avatar Emblem</span>
+                  <span className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">Avatar Emblem</span>
                   <div className="flex flex-wrap gap-1.5">
                     {AVATAR_EMOJIS.map((em) => (
                       <button
@@ -221,10 +221,10 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                         type="button"
                         onClick={() => setAvatarEmoji(em)}
                         aria-pressed={avatarEmoji === em}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-base cursor-pointer ${
+                        className={`w-8 h-8 rounded-[7px] flex items-center justify-center text-base cursor-pointer ${
                           avatarEmoji === em
-                            ? 'bg-[#7c6cff]/30 border border-[#7c6cff]'
-                            : 'bg-[#0d1017] border border-[#262c3f] hover:border-[#414c6b]'
+                            ? 'bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)]'
+                            : 'bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] hover:border-[var(--cloak-border-strong)]'
                         }`}
                       >
                         {em}
@@ -235,7 +235,7 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
               </div>
 
               <div>
-                <label htmlFor="onboard-passphrase" className="block text-xs font-medium text-[#cbd5e1] mb-1.5">
+                <label htmlFor="onboard-passphrase" className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">
                   Local Vault Passphrase (optional — strengthens IndexedDB key storage with Argon2id)
                 </label>
                 <input
@@ -245,7 +245,7 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                   placeholder="Leave blank for seamless non-extractable WebCrypto wrapping"
-                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white placeholder-[#64748b] focus:border-[#7c6cff] focus:outline-none"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] focus:border-[var(--cloak-accent)] focus:outline-none"
                 />
               </div>
 
@@ -256,7 +256,7 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
           ) : (
             <form onSubmit={handleRestore} className="space-y-4">
               <div>
-                <label htmlFor="restore-file-input" className="block text-xs font-medium text-[#cbd5e1] mb-1.5">
+                <label htmlFor="restore-file-input" className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">
                   Encrypted Identity Backup (.cloakkey)
                 </label>
                 <div className="flex items-center gap-2">
@@ -272,14 +272,14 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                     <Upload className="w-4 h-4" />
                     Choose .cloakkey File
                   </Button>
-                  <span className="text-xs text-[#9aa3b8]">
+                  <span className="text-xs text-[var(--cloak-text-muted)]">
                     {backupJson ? 'Backup loaded cleanly' : 'No file selected'}
                   </span>
                 </div>
               </div>
 
               <div>
-                <label htmlFor="restore-backup-pw" className="block text-xs font-medium text-[#cbd5e1] mb-1.5">
+                <label htmlFor="restore-backup-pw" className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">
                   Backup Decryption Password
                 </label>
                 <input
@@ -289,12 +289,12 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                   required
                   value={backupPassword}
                   onChange={(e) => setBackupPassword(e.target.value)}
-                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white focus:border-[#7c6cff] focus:outline-none"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] focus:border-[var(--cloak-accent)] focus:outline-none"
                 />
               </div>
 
               <div>
-                <label htmlFor="restore-local-pw" className="block text-xs font-medium text-[#cbd5e1] mb-1.5">
+                <label htmlFor="restore-local-pw" className="block text-xs font-medium text-[var(--cloak-text-body)] mb-1.5">
                   New Local Browser Vault Passphrase (optional)
                 </label>
                 <input
@@ -303,7 +303,7 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                   autoComplete="new-password"
                   value={localPassphrase}
                   onChange={(e) => setLocalPassphrase(e.target.value)}
-                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white focus:border-[#7c6cff] focus:outline-none"
+                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] focus:border-[var(--cloak-accent)] focus:outline-none"
                 />
               </div>
 
