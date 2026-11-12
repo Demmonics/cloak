@@ -3,6 +3,7 @@ node_modules/
 dist/
 dist-windows/*.exe
 dist-windows/*.zip
+dist-windows/portable/
 build/
 target/
 *.tsbuildinfo
