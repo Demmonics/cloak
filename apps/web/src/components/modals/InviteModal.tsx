@@ -51,6 +51,7 @@ export function ManageInvitesModal({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setLatestUrl('');
     try {
       const res = await createRoomInviteLink({
         roomId,

@@ -432,13 +432,13 @@ export function WorkspacePage() {
           {roomDetail && activeChannel ? (
             <>
               {/* Top Header Bar */}
-              <header className="px-4 py-2.5 border-b border-[#1f2435] bg-[#12151f] flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
+              <header className="px-3 sm:px-4 py-2.5 border-b border-[#1f2435] bg-[#12151f] flex items-center justify-between gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <button
                     type="button"
                     aria-label="Open navigation menu"
                     onClick={() => setMobileNavOpen(true)}
-                    className="md:hidden p-1.5 rounded-lg bg-[#1a1f2e] text-[#cbd5e1] cursor-pointer"
+                    className="md:hidden p-1.5 rounded-lg bg-[#1a1f2e] text-[#cbd5e1] cursor-pointer shrink-0"
                   >
                     <Menu className="w-4 h-4" />
                   </button>
@@ -446,12 +446,12 @@ export function WorkspacePage() {
                   <div className="min-w-0">
                     <h1 className="text-sm font-semibold text-white truncate">{activeChannel.name}</h1>
                     {activeChannel.topic && (
-                      <p className="text-[11px] text-[#8d96ad] truncate">{activeChannel.topic}</p>
+                      <p className="text-[11px] text-[#8d96ad] truncate hidden sm:block">{activeChannel.topic}</p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 overflow-x-auto max-w-[54vw] sm:max-w-none">
                   <button
                     type="button"
                     onClick={() => setRightDrawer('search')}

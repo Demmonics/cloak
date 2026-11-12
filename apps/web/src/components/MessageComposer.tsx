@@ -311,7 +311,7 @@ export function MessageComposer({
       )}
 
       <form ref={formRef} onSubmit={handleSubmit} className="rounded-xl border border-[#262c3f] bg-[#141722] p-2">
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-end gap-1.5 sm:gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -323,29 +323,31 @@ export function MessageComposer({
             className="sr-only"
           />
 
-          <button
-            type="button"
-            title="Attach encrypted file"
-            aria-label="Attach file"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2 rounded-lg text-[#9aa3b8] hover:text-white hover:bg-[#1f2536] cursor-pointer"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 order-2 sm:order-1 shrink-0">
+            <button
+              type="button"
+              title="Attach encrypted file"
+              aria-label="Attach file"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 rounded-lg text-[#9aa3b8] hover:text-white hover:bg-[#1f2536] cursor-pointer"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
 
-          <button
-            type="button"
-            title={recording ? 'Stop & send encrypted voice note' : 'Record voice note'}
-            aria-label={recording ? 'Stop recording' : 'Record voice note'}
-            onClick={() => void toggleVoiceRecording()}
-            className={`p-2 rounded-lg cursor-pointer ${
-              recording
-                ? 'bg-[#dc2626] text-white'
-                : 'text-[#9aa3b8] hover:text-white hover:bg-[#1f2536]'
-            }`}
-          >
-            {recording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-          </button>
+            <button
+              type="button"
+              title={recording ? 'Stop & send encrypted voice note' : 'Record voice note'}
+              aria-label={recording ? 'Stop recording' : 'Record voice note'}
+              onClick={() => void toggleVoiceRecording()}
+              className={`p-2 rounded-lg cursor-pointer ${
+                recording
+                  ? 'bg-[#dc2626] text-white'
+                  : 'text-[#9aa3b8] hover:text-white hover:bg-[#1f2536]'
+              }`}
+            >
+              {recording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+          </div>
 
           <label htmlFor="composer-textarea" className="sr-only">
             Message #{channelName}
@@ -358,20 +360,20 @@ export function MessageComposer({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={`Encrypted message in #${channelName} (Enter to send, Shift+Enter for newline)`}
-            className="flex-1 resize-none bg-transparent py-2 px-1 text-sm text-[#f1f3f9] placeholder-[#64748b] focus:outline-none max-h-36"
+            className="order-1 sm:order-2 basis-full sm:basis-auto sm:flex-1 min-w-0 resize-none bg-transparent py-2 px-1.5 sm:px-1 text-sm text-[#f1f3f9] placeholder-[#64748b] focus:outline-none max-h-36"
           />
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 order-3 ml-auto shrink-0">
             <label htmlFor="composer-disappear" className="sr-only">
               Disappearing timer
             </label>
             <div className="inline-flex items-center gap-1 rounded-lg bg-[#0d1017] border border-[#262c3f] px-2 py-1 text-[11px] text-[#9aa3b8]">
-              <Timer className="w-3 h-3 text-[#38bdf8]" />
+              <Timer className="w-3 h-3 text-[#38bdf8] shrink-0" />
               <select
                 id="composer-disappear"
                 value={disappearSeconds === null ? '' : String(disappearSeconds)}
                 onChange={(e) => setDisappearSeconds(e.target.value ? Number(e.target.value) : null)}
-                className="bg-transparent text-xs text-[#cbd5e1] focus:outline-none cursor-pointer"
+                className="bg-transparent text-xs text-[#cbd5e1] focus:outline-none cursor-pointer max-w-[130px] sm:max-w-none"
               >
                 {DISAPPEARING_MESSAGE_OPTIONS.map((opt) => (
                   <option

@@ -30,6 +30,10 @@ export function InviteLandingPage() {
   const linkSecret = fragmentParams.get('k') ?? '';
 
   useEffect(() => {
+    setInspectError(null);
+    setInspection(null);
+    setPendingApproval(false);
+    setPassword('');
     if (!token) {
       setInspectError('No invitation token found in URL.');
       return;

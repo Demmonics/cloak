@@ -182,8 +182,8 @@ export function ExportChatModal({
               onChange={(e) => setContainerMode(e.target.value as ExportContainerMode)}
               className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-2.5 py-2 text-xs text-white"
             >
-              <option value="cloakexport">.cloakexport — Argon2id + XChaCha20-Poly1305 (Recommended)</option>
-              <option value="aes_zip">.zip — Standard AES-256 Password-Protected ZIP</option>
+              <option value="cloakexport">.cloakexport (Argon2id + XChaCha20, Recommended)</option>
+              <option value="aes_zip">.zip (AES-256 Password ZIP)</option>
             </select>
           </div>
         </div>

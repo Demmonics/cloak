@@ -20,7 +20,12 @@ import {
 } from 'lucide-react';
 import { Avatar, Button, ConfirmDialog, Skeleton } from '@cloak/ui';
 import type { DecryptedAttachmentRef, RoomMemberSummary } from '@cloak/protocol';
-import { renderMarkdownToUnsafeHtml, sanitizeUntrustedHtml } from '../lib/sanitizeHtml.js';
+import {
+  escapeHtmlText,
+  renderMarkdownToUnsafeHtml,
+  sanitizeUntrustedHtml,
+  trySanitizeUntrustedHtmlSync,
+} from '../lib/sanitizeHtml.js';
 import { db, type LocalDecryptedMessage } from '../lib/storage.js';
 import { downloadAndDecryptAttachment } from '../lib/workspaceClient.js';
 
@@ -46,7 +51,29 @@ export interface MessageListProps {
 const QUICK_EMOJIS = ['👍', '❤️', '🔒', '😂'];
 
 function SanitizedMarkdown({ text }: { text: string }) {
-  const cleanHtml = useMemo(() => sanitizeUntrustedHtml(renderMarkdownToUnsafeHtml(text)), [text]);
+  const unsafeHtml = useMemo(() => renderMarkdownToUnsafeHtml(text), [text]);
+  const [cleanHtml, setCleanHtml] = useState<string>(
+    () => trySanitizeUntrustedHtmlSync(unsafeHtml) ?? escapeHtmlText(text),
+  );
+
+  useEffect(() => {
+    const sync = trySanitizeUntrustedHtmlSync(unsafeHtml);
+    if (sync !== null) {
+      setCleanHtml(sync);
+      return;
+    }
+    let cancelled = false;
+    setCleanHtml(escapeHtmlText(text));
+    void sanitizeUntrustedHtml(unsafeHtml).then((sanitized) => {
+      if (!cancelled) {
+        setCleanHtml(sanitized);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [text, unsafeHtml]);
+
   return (
     <div
       className="cloak-md text-sm text-[#e2e8f0] leading-relaxed break-words"

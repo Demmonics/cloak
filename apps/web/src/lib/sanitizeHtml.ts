@@ -24,7 +24,7 @@ const SAFE_ELEMENTS = [
 
 const SAFE_TAGS_SET = new Set<string>(SAFE_ELEMENTS);
 
-function escapeHtmlText(text: string): string {
+export function escapeHtmlText(text: string): string {
   return text
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -77,13 +77,7 @@ export function renderMarkdownToUnsafeHtml(rawMarkdown: string): string {
 
 let cachedPurify: typeof import('dompurify').default | null = null;
 
-/**
- * Sanitizes rendered HTML following Modern Web Guidance:
- * Uses native Sanitizer / Element#setHTML when supported, and dynamically imports
- * DOMPurify only when native support is absent with ALLOW_ARIA_ATTR=false,
- * ALLOW_DATA_ATTR=false, KEEP_CONTENT=false, and '#text' allowlisted.
- */
-export async function sanitizeUntrustedHtml(html: string): Promise<string> {
+export function trySanitizeUntrustedHtmlSync(html: string): string | null {
   if (typeof document === 'undefined') {
     return html;
   }
@@ -122,6 +116,31 @@ export async function sanitizeUntrustedHtml(html: string): Promise<string> {
     } catch {
       // Fallback cleanly to DOMPurify if native Sanitizer signature differs
     }
+  }
+
+  if (cachedPurify) {
+    return cachedPurify.sanitize(html, {
+      ALLOWED_TAGS: [...SAFE_TAGS_SET, '#text'],
+      ALLOWED_ATTR: ['href', 'rel', 'target', 'class'],
+      ALLOW_ARIA_ATTR: false,
+      ALLOW_DATA_ATTR: false,
+      KEEP_CONTENT: false,
+    });
+  }
+
+  return null;
+}
+
+/**
+ * Sanitizes rendered HTML following Modern Web Guidance:
+ * Uses native Sanitizer / Element#setHTML when supported, and dynamically imports
+ * DOMPurify only when native support is absent with ALLOW_ARIA_ATTR=false,
+ * ALLOW_DATA_ATTR=false, KEEP_CONTENT=false, and '#text' allowlisted.
+ */
+export async function sanitizeUntrustedHtml(html: string): Promise<string> {
+  const syncResult = trySanitizeUntrustedHtmlSync(html);
+  if (syncResult !== null) {
+    return syncResult;
   }
 
   if (!cachedPurify) {

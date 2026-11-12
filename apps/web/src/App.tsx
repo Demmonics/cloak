@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ArchiveViewerPage } from './pages/ArchiveViewerPage.js';
 import { InviteLandingPage } from './pages/InviteLandingPage.js';
+import { P2pWorkspacePage } from './pages/P2pWorkspacePage.js';
 import { WorkspacePage } from './pages/WorkspacePage.js';
 import { bootVaultOnStartup } from './lib/workspaceClient.js';
 
@@ -28,6 +29,7 @@ export function App() {
           <Route path="/invite" element={<InviteLandingPage />} />
           <Route path="/invite/:token" element={<InviteLandingPage />} />
           <Route path="/archive" element={<ArchiveViewerPage />} />
+          <Route path="/p2p" element={<P2pWorkspacePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

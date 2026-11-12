@@ -107,13 +107,21 @@ export function OnboardingScreen({ onDone }: { onDone?: () => void }) {
                 </p>
               </div>
             </div>
-            <Link
-              to="/archive"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[#a5b4fc] bg-[#1e2334] border border-[#323a54] hover:bg-[#272e44]"
-            >
-              <Archive className="w-3.5 h-3.5" />
-              Open Archive
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+              <Link
+                to="/p2p"
+                className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[#38bdf8] bg-[#1e2334] border border-[#323a54] hover:bg-[#272e44]"
+              >
+                Direct P2P
+              </Link>
+              <Link
+                to="/archive"
+                className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[#a5b4fc] bg-[#1e2334] border border-[#323a54] hover:bg-[#272e44]"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                Open Archive
+              </Link>
+            </div>
           </div>
 
           <div className="mt-4 flex gap-2" role="tablist" aria-label="Identity setup mode">

@@ -7,6 +7,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packagesDir = path.resolve(__dirname, '../../packages');
+const apiProxyTarget = process.env.CLOAK_API_PROXY_TARGET || 'http://127.0.0.1:8080';
 
 export default defineConfig({
   plugins: [
@@ -31,7 +32,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/p2p\/v1\//],
         globPatterns: ['**/*.{js,css,html,ico,svg,wasm,mjs}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
@@ -55,7 +56,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: apiProxyTarget,
         changeOrigin: true,
         ws: true,
       },
@@ -66,7 +67,7 @@ export default defineConfig({
     port: 4173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: apiProxyTarget,
         changeOrigin: true,
         ws: true,
       },

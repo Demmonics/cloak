@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router';
-import { Archive, Link2, MessageSquareLock, Plus, Settings, Shield } from 'lucide-react';
+import { Archive, Link2, MessageSquareLock, Network, Plus, Settings, Shield } from 'lucide-react';
 import type { RoomSummary } from '@cloak/protocol';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -116,6 +116,15 @@ export function LeftRail({ rooms, onSelectRoom }: LeftRailProps) {
         >
           <Link2 className="w-4 h-4" />
         </button>
+
+        <Link
+          to="/p2p"
+          title="Direct P2P Desktop Mode (SQLite Local Vault)"
+          aria-label="Direct P2P Desktop Mode"
+          className="w-11 h-11 rounded-2xl bg-[#181c29] hover:bg-[#2a3147] text-[#38bdf8] hover:text-white flex items-center justify-center cloak-transition"
+        >
+          <Network className="w-4 h-4" />
+        </Link>
 
         <Link
           to="/archive"
