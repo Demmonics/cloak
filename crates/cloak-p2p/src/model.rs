@@ -56,7 +56,11 @@ pub struct PeerSummary {
     pub revoked: bool,
 }
 
-/// Shareable direct pairing ticket encoded as a `cloakp2p://` URI.
+fn default_invite_max_uses() -> u32 {
+    1
+}
+
+/// Shareable signed & bounded direct pairing ticket encoded as a `cloakp2p://` URI.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PairingTicket {
@@ -70,15 +74,51 @@ pub struct PairingTicket {
     pub room_id: String,
     pub room_name: String,
     pub room_key_b64: String,
+    #[serde(default)]
+    pub invite_id: String,
+    #[serde(default)]
+    pub issued_at_ms: i64,
+    #[serde(default)]
+    pub expires_at_ms: i64,
+    #[serde(default = "default_invite_max_uses")]
+    pub max_uses: u32,
+    #[serde(default)]
+    pub invite_sig_b64: String,
 }
 
 impl PairingTicket {
+    /// Canonical domain-separated invitation capability payload signed by the inviter's Ed25519 key.
+    pub fn invite_signing_payload(&self) -> String {
+        format!(
+            "cloak-invite-v1:{}:{}:{}:{}:{}:{}:{}",
+            self.device_id,
+            self.room_id,
+            self.ed25519_public_key_b64,
+            self.invite_id,
+            self.issued_at_ms,
+            self.expires_at_ms,
+            self.max_uses
+        )
+    }
+
     /// Encodes the pairing ticket into a copyable URI (`cloakp2p://host:port?...`).
     pub fn to_uri(&self) -> String {
-        let mut alt_param = String::new();
+        let mut extra_params = String::new();
         if !self.alternate_addrs.is_empty() {
             let joined = self.alternate_addrs.join(",");
-            alt_param = format!("&alt={}", urlencoding::encode(&joined));
+            extra_params.push_str(&format!("&alt={}", urlencoding::encode(&joined)));
+        }
+        if !self.invite_id.is_empty() {
+            extra_params.push_str(&format!("&inv={}", urlencoding::encode(&self.invite_id)));
+            extra_params.push_str(&format!("&iat={}", self.issued_at_ms));
+            extra_params.push_str(&format!("&exp={}", self.expires_at_ms));
+            extra_params.push_str(&format!("&uses={}", self.max_uses));
+        }
+        if !self.invite_sig_b64.is_empty() {
+            extra_params.push_str(&format!(
+                "&sig={}",
+                urlencoding::encode(&self.invite_sig_b64)
+            ));
         }
         format!(
             "cloakp2p://{}?dev={}&name={}&ed={}&x={}&room={}&rname={}{}#rk={}",
@@ -89,7 +129,7 @@ impl PairingTicket {
             urlencoding::encode(&self.x25519_public_key_b64),
             urlencoding::encode(&self.room_id),
             urlencoding::encode(&self.room_name),
-            alt_param,
+            extra_params,
             urlencoding::encode(&self.room_key_b64),
         )
     }
@@ -113,6 +153,11 @@ impl PairingTicket {
         let mut x = None;
         let mut room = None;
         let mut rname = None;
+        let mut invite_id = None;
+        let mut issued_at_ms = 0i64;
+        let mut expires_at_ms = 0i64;
+        let mut max_uses = 1u32;
+        let mut invite_sig_b64 = None;
         let mut alternate_addrs = Vec::new();
         for pair in query.split('&') {
             if let Some((k, v)) = pair.split_once('=') {
@@ -126,6 +171,23 @@ impl PairingTicket {
                     "x" => x = Some(decoded),
                     "room" => room = Some(decoded),
                     "rname" => rname = Some(decoded),
+                    "inv" => invite_id = Some(decoded),
+                    "iat" => {
+                        issued_at_ms = decoded
+                            .parse::<i64>()
+                            .map_err(|_| "Invalid invitation issued_at".to_string())?;
+                    }
+                    "exp" => {
+                        expires_at_ms = decoded
+                            .parse::<i64>()
+                            .map_err(|_| "Invalid invitation expires_at".to_string())?;
+                    }
+                    "uses" => {
+                        max_uses = decoded
+                            .parse::<u32>()
+                            .map_err(|_| "Invalid invitation max_uses".to_string())?;
+                    }
+                    "sig" => invite_sig_b64 = Some(decoded),
                     "alt" => {
                         alternate_addrs = decoded
                             .split(',')
@@ -155,8 +217,37 @@ impl PairingTicket {
             room_id: room.ok_or_else(|| "Missing room".to_string())?,
             room_name: rname.unwrap_or_else(|| "Private Peer Room".to_string()),
             room_key_b64,
+            invite_id: invite_id.unwrap_or_default(),
+            issued_at_ms,
+            expires_at_ms,
+            max_uses,
+            invite_sig_b64: invite_sig_b64.unwrap_or_default(),
         })
     }
+}
+
+/// Active or consumed invitation record stored locally by the room inviter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomInvitationSummary {
+    pub invite_id: String,
+    pub room_id: String,
+    pub issued_at_ms: i64,
+    pub expires_at_ms: i64,
+    pub max_uses: u32,
+    pub uses_count: u32,
+    pub revoked: bool,
+}
+
+/// Per-room peer authorization entry in `room_members`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomMemberSummary {
+    pub room_id: String,
+    pub device_id: String,
+    pub role: String,
+    pub added_at: String,
+    pub revoked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -506,6 +597,24 @@ pub enum WireFrame {
         room_id: String,
         new_epoch: i64,
         initiator_device_id: String,
+    },
+    /// Signed, bounded room invitation capability presented by an incoming peer before room sync/messaging.
+    JoinWithInvite {
+        room_id: String,
+        invite_id: String,
+        issued_at_ms: i64,
+        expires_at_ms: i64,
+        max_uses: u32,
+        invite_sig_b64: String,
+    },
+    /// Confirmation returned to the joining peer once invitation verification and room admission commit.
+    JoinAccepted {
+        room_id: String,
+    },
+    /// Explicit authorization rejection returned when a peer attempts unauthorized room operations.
+    JoinRejected {
+        room_id: String,
+        reason: String,
     },
 }
 

@@ -34,12 +34,14 @@ body,
 .cloak-prose pre,
 .cloak-md pre {
   margin: 0.45rem 0;
-  padding: 0.65rem 0.85rem;
-  border-radius: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.85rem;
   background: var(--cloak-bg-input);
   border: 1px solid var(--cloak-border);
+  box-shadow: inset 0 1px 0 var(--cloak-border);
   overflow-x: auto;
   font-size: 0.84rem;
+  line-height: 1.5;
 }
 
 .cloak-prose code,

@@ -17,7 +17,8 @@ use crate::ghost::make_cleanup_summary;
 use crate::model::{
     ConnectivityMode, DecryptedMessageView, DeletionTombstone, GhostDeletionSummary,
     GhostModeLevel, GhostPolicy, GhostRoomOverride, LocalAttachmentMeta, LocalChannel, LocalRoom,
-    OutgoingViewedPolicy, PeerSummary, StoredMessage, TombstoneScope, WireFrame,
+    OutgoingViewedPolicy, PeerSummary, RoomInvitationSummary, RoomMemberSummary, StoredMessage,
+    TombstoneScope, WireFrame,
 };
 
 use crate::stealth::LocalDeletionAction;
@@ -179,8 +180,59 @@ impl LocalVault {
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS room_members (
+                room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+                device_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                added_at TEXT NOT NULL,
+                revoked INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (room_id, device_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_room_members_device
+                ON room_members(device_id, revoked);
+
+            CREATE TABLE IF NOT EXISTS room_invitations (
+                invite_id TEXT PRIMARY KEY,
+                room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+                issued_at_ms INTEGER NOT NULL,
+                expires_at_ms INTEGER NOT NULL,
+                max_uses INTEGER NOT NULL,
+                uses_count INTEGER NOT NULL DEFAULT 0,
+                revoked INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_room_invitations_room
+                ON room_invitations(room_id, revoked);
             ",
         )?;
+
+        // Backfill room_members once for pre-Phase-12 vaults so existing local rooms & active threads keep syncing
+        let member_count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM room_members", [], |r| r.get(0))?;
+        if member_count == 0 {
+            let now_rfc = Utc::now().to_rfc3339();
+            if let Ok(local_id) = conn.query_row(
+                "SELECT device_id FROM identity WHERE singleton = 1",
+                [],
+                |r| r.get::<_, String>(0),
+            ) {
+                let _ = conn.execute(
+                    "INSERT OR IGNORE INTO room_members (room_id, device_id, role, added_at, revoked)
+                     SELECT id, ?1, 'owner', ?2, 0 FROM rooms",
+                    params![local_id, now_rfc],
+                );
+            }
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO room_members (room_id, device_id, role, added_at, revoked)
+                 SELECT DISTINCT m.room_id, m.sender_device_id, 'member', ?1, 0
+                 FROM messages m
+                 INNER JOIN peers p ON p.device_id = m.sender_device_id AND p.revoked = 0",
+                params![now_rfc],
+            );
+        }
 
         // Non-destructive column upgrades for any existing databases from prior versions
         Self::ensure_column(
@@ -368,6 +420,16 @@ impl LocalVault {
         if updated == 0 {
             return Err(P2pError::NotFound(format!("peer {device_id}")));
         }
+        if revoked {
+            self.conn.execute(
+                "UPDATE room_members SET revoked = 1 WHERE device_id = ?1",
+                params![device_id],
+            )?;
+            self.conn.execute(
+                "DELETE FROM outbox WHERE peer_device_id = ?1",
+                params![device_id],
+            )?;
+        }
         Ok(())
     }
 
@@ -460,6 +522,14 @@ impl LocalVault {
              VALUES (?1, ?2, 1, ?3, ?4, ?5)",
             params![rid, name.trim(), sealed_rkey, default_disappear_seconds, now.to_rfc3339()],
         )?;
+
+        if let Ok(local_id) = self.conn.query_row(
+            "SELECT device_id FROM identity WHERE singleton = 1",
+            [],
+            |r| r.get::<_, String>(0),
+        ) {
+            let _ = self.authorize_room_member(&rid, &local_id, "owner");
+        }
 
         let existing_channel: Option<LocalChannel> = self
             .conn
@@ -1784,6 +1854,228 @@ impl LocalVault {
                 .execute("DELETE FROM outbox WHERE id = ?1", params![row_id])?;
         }
         Ok(frames)
+    }
+
+    pub fn clear_outbox_for_peer(&self, peer_device_id: &str) -> P2pResult<usize> {
+        let deleted = self.conn.execute(
+            "DELETE FROM outbox WHERE peer_device_id = ?1",
+            params![peer_device_id],
+        )?;
+        Ok(deleted)
+    }
+
+    // ==================== Per-Room Peer Authorization & Signed Invitations ====================
+
+    pub fn authorize_room_member(
+        &self,
+        room_id: &str,
+        device_id: &str,
+        role: &str,
+    ) -> P2pResult<()> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO room_members (room_id, device_id, role, added_at, revoked)
+             VALUES (?1, ?2, ?3, ?4, 0)
+             ON CONFLICT(room_id, device_id) DO UPDATE SET
+                role = excluded.role,
+                revoked = 0",
+            params![room_id, device_id, role, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn revoke_room_member(&self, room_id: &str, device_id: &str) -> P2pResult<()> {
+        self.conn.execute(
+            "UPDATE room_members SET revoked = 1 WHERE room_id = ?1 AND device_id = ?2",
+            params![room_id, device_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn is_peer_room_member(&self, room_id: &str, device_id: &str) -> P2pResult<bool> {
+        let ok: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT 1
+                 FROM room_members rm
+                 INNER JOIN peers p ON p.device_id = rm.device_id
+                 WHERE rm.room_id = ?1
+                   AND rm.device_id = ?2
+                   AND rm.revoked = 0
+                   AND p.revoked = 0",
+                params![room_id, device_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(ok.is_some())
+    }
+
+    pub fn list_room_members(&self, room_id: &str) -> P2pResult<Vec<RoomMemberSummary>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT room_id, device_id, role, added_at, revoked
+             FROM room_members WHERE room_id = ?1 ORDER BY added_at ASC",
+        )?;
+        let rows = stmt.query_map(params![room_id], |r| {
+            let rev: i64 = r.get(4)?;
+            Ok(RoomMemberSummary {
+                room_id: r.get(0)?,
+                device_id: r.get(1)?,
+                role: r.get(2)?,
+                added_at: r.get(3)?,
+                revoked: rev != 0,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn list_room_member_peers(&self, room_id: &str) -> P2pResult<Vec<PeerSummary>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.device_id, p.display_name, p.ed25519_public_key_b64, p.x25519_public_key_b64,
+                    p.direct_addr, p.alternate_addrs_json, p.connectivity_json, p.last_seen_at, p.revoked
+             FROM peers p
+             INNER JOIN room_members rm ON rm.device_id = p.device_id
+             WHERE rm.room_id = ?1
+               AND rm.revoked = 0
+               AND p.revoked = 0
+             ORDER BY p.display_name ASC",
+        )?;
+        let rows = stmt.query_map(params![room_id], Self::map_peer_row)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn record_room_invitation(
+        &self,
+        invite_id: &str,
+        room_id: &str,
+        issued_at_ms: i64,
+        expires_at_ms: i64,
+        max_uses: u32,
+    ) -> P2pResult<()> {
+        self.conn.execute(
+            "INSERT INTO room_invitations (invite_id, room_id, issued_at_ms, expires_at_ms, max_uses, uses_count, revoked, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, 0, ?6)",
+            params![
+                invite_id,
+                room_id,
+                issued_at_ms,
+                expires_at_ms,
+                max_uses as i64,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn consume_room_invitation(
+        &self,
+        room_id: &str,
+        invite_id: &str,
+        peer_device_id: &str,
+        now_ms: i64,
+    ) -> P2pResult<()> {
+        let row: Option<(i64, i64, i64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT expires_at_ms, max_uses, uses_count, revoked
+                 FROM room_invitations
+                 WHERE invite_id = ?1 AND room_id = ?2",
+                params![invite_id, room_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        let Some((expires_at_ms, max_uses, uses_count, revoked)) = row else {
+            return Err(P2pError::PeerRejected(
+                "Unknown invitation for target room".into(),
+            ));
+        };
+        if revoked != 0 {
+            return Err(P2pError::PeerRejected("Invitation has been revoked".into()));
+        }
+        if expires_at_ms <= now_ms {
+            return Err(P2pError::PeerRejected("Invitation has expired".into()));
+        }
+        if uses_count >= max_uses {
+            return Err(P2pError::PeerRejected(
+                "Invitation usage limit exhausted".into(),
+            ));
+        }
+
+        // Atomic conditional increment protects single-use tickets against concurrent replay
+        let updated = self.conn.execute(
+            "UPDATE room_invitations
+             SET uses_count = uses_count + 1
+             WHERE invite_id = ?1
+               AND room_id = ?2
+               AND revoked = 0
+               AND expires_at_ms > ?3
+               AND uses_count < max_uses",
+            params![invite_id, room_id, now_ms],
+        )?;
+        if updated == 0 {
+            return Err(P2pError::PeerRejected(
+                "Invitation could not be redeemed (exhausted, expired, or revoked)".into(),
+            ));
+        }
+
+        self.authorize_room_member(room_id, peer_device_id, "member")
+    }
+
+    pub fn list_room_invitations(&self, room_id: &str) -> P2pResult<Vec<RoomInvitationSummary>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT invite_id, room_id, issued_at_ms, expires_at_ms, max_uses, uses_count, revoked
+             FROM room_invitations
+             WHERE room_id = ?1
+             ORDER BY issued_at_ms DESC",
+        )?;
+        let rows = stmt.query_map(params![room_id], |r| {
+            Ok(RoomInvitationSummary {
+                invite_id: r.get(0)?,
+                room_id: r.get(1)?,
+                issued_at_ms: r.get(2)?,
+                expires_at_ms: r.get(3)?,
+                max_uses: (r.get::<_, i64>(4)?).max(0) as u32,
+                uses_count: (r.get::<_, i64>(5)?).max(0) as u32,
+                revoked: r.get::<_, i64>(6)? != 0,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn revoke_room_invitation(&self, room_id: &str, invite_id: &str) -> P2pResult<bool> {
+        let updated = self.conn.execute(
+            "UPDATE room_invitations SET revoked = 1 WHERE invite_id = ?1 AND room_id = ?2",
+            params![invite_id, room_id],
+        )?;
+        Ok(updated > 0)
+    }
+
+    pub fn get_message_meta(
+        &self,
+        room_id: &str,
+        message_id: &str,
+    ) -> P2pResult<Option<(String, String, i64)>> {
+        self.conn
+            .query_row(
+                "SELECT sender_device_id, channel_id, encryption_epoch
+                 FROM messages
+                 WHERE room_id = ?1 AND id = ?2",
+                params![room_id, message_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(P2pError::from)
     }
 }
 

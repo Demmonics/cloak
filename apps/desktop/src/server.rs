@@ -136,7 +136,12 @@ async fn require_loopback_auth(
                 .and_then(|v| v.to_str().ok())
         });
 
-    let ws_query_tok = if req.uri().path() == "/ws" || req.uri().path() == "/p2p/v1/ws" {
+    let uri_path = req.uri().path();
+    let is_ws_route = uri_path == "/ws"
+        || uri_path == "/p2p/v1/ws"
+        || uri_path.starts_with("/capture/stream/")
+        || uri_path.starts_with("/p2p/v1/capture/stream/");
+    let ws_query_tok = if is_ws_route {
         req.uri()
             .query()
             .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("token=")))
@@ -196,6 +201,12 @@ pub fn build_router(state: DesktopState) -> Router {
         .route("/rooms", get(list_rooms).post(create_room))
         .route("/rooms/{room_id}/channels", get(list_channels))
         .route("/rooms/{room_id}/ticket", post(export_ticket))
+        .route("/rooms/{room_id}/invitations", get(list_room_invitations))
+        .route(
+            "/rooms/{room_id}/invitations/{invite_id}",
+            delete(revoke_room_invitation),
+        )
+        .route("/rooms/{room_id}/members", get(list_room_members))
         .route("/pair", post(pair_with_ticket))
         .route(
             "/rooms/{room_id}/channels/{channel_id}/messages",
@@ -242,6 +253,7 @@ pub fn build_router(state: DesktopState) -> Router {
         // Native Windows Capture & File Picker APIs
         .route("/capture/sources", get(list_capture_sources))
         .route("/capture/frame/{source_id}", get(capture_source_frame))
+        .route("/capture/stream/{source_id}", get(capture_source_stream_ws))
         .route("/dialog/pick-files", post(pick_native_files))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -412,6 +424,8 @@ async fn list_channels(State(st): State<DesktopState>, Path(room_id): Path<Strin
 #[serde(rename_all = "camelCase")]
 struct ExportTicketReq {
     advertised_addr: Option<String>,
+    ttl_seconds: Option<i64>,
+    max_uses: Option<u32>,
 }
 
 async fn export_ticket(
@@ -419,11 +433,51 @@ async fn export_ticket(
     Path(room_id): Path<String>,
     Json(req): Json<ExportTicketReq>,
 ) -> Response {
-    match st
-        .node
-        .export_pairing_ticket(&room_id, req.advertised_addr.as_deref())
-    {
-        Ok(ticket) => Json(serde_json::json!({ "uri": ticket.to_uri() })).into_response(),
+    match st.node.export_pairing_ticket_with_options(
+        &room_id,
+        req.advertised_addr.as_deref(),
+        req.ttl_seconds,
+        req.max_uses,
+    ) {
+        Ok(ticket) => Json(serde_json::json!({
+            "uri": ticket.to_uri(),
+            "inviteId": ticket.invite_id,
+            "issuedAtMs": ticket.issued_at_ms,
+            "expiresAtMs": ticket.expires_at_ms,
+            "maxUses": ticket.max_uses,
+        }))
+        .into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn list_room_invitations(
+    State(st): State<DesktopState>,
+    Path(room_id): Path<String>,
+) -> Response {
+    match st.node.list_room_invitations(&room_id) {
+        Ok(list) => Json(list).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn revoke_room_invitation(
+    State(st): State<DesktopState>,
+    Path((room_id, invite_id)): Path<(String, String)>,
+) -> Response {
+    match st.node.revoke_room_invitation(&room_id, &invite_id) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => map_p2p_error(P2pError::NotFound(format!("invitation {invite_id}"))),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn list_room_members(
+    State(st): State<DesktopState>,
+    Path(room_id): Path<String>,
+) -> Response {
+    match st.node.list_room_members(&room_id) {
+        Ok(list) => Json(list).into_response(),
         Err(err) => map_p2p_error(err),
     }
 }
@@ -752,6 +806,84 @@ async fn capture_source_frame(
         Ok(Err(msg)) => map_p2p_error(P2pError::NotFound(msg)),
         Err(_) => map_p2p_error(P2pError::Protocol("Capture worker panicked".into())),
     }
+}
+
+async fn capture_source_stream_ws(
+    ws: WebSocketUpgrade,
+    State(st): State<DesktopState>,
+    Path(source_id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let max_width = q
+        .get("maxWidth")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(1280)
+        .clamp(320, 3840);
+    let fps = q
+        .get("fps")
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(30)
+        .clamp(5, 60);
+    ws.on_upgrade(move |socket| handle_capture_ws(socket, st.node, source_id, max_width, fps))
+}
+
+async fn handle_capture_ws(
+    socket: WebSocket,
+    node: P2pNode,
+    source_id: String,
+    max_width: i32,
+    fps: u32,
+) {
+    let (mut sender, mut receiver) = socket.split();
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel::<Bytes>(2);
+    let interval = std::time::Duration::from_secs_f64(1.0 / (fps as f64));
+    let capture_node = node.clone();
+
+    let worker = tokio::task::spawn_blocking(move || {
+        let mut session = capture::CaptureSession::new();
+        while !*stop_rx.borrow() {
+            if capture_node.is_stealth_locked() {
+                break;
+            }
+            let frame_start = std::time::Instant::now();
+            match session.capture_rgba_packet(&source_id, max_width) {
+                Ok(packet) => {
+                    let payload = Bytes::copy_from_slice(packet);
+                    if frame_tx.blocking_send(payload).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+            let elapsed = frame_start.elapsed();
+            if let Some(remaining) = interval.checked_sub(elapsed) {
+                std::thread::sleep(remaining);
+            }
+        }
+    });
+
+    let recv_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = receiver.next().await {
+            if matches!(msg, Message::Close(_)) {
+                break;
+            }
+        }
+    });
+
+    while let Some(frame_bytes) = frame_rx.recv().await {
+        if node.is_stealth_locked() {
+            break;
+        }
+        if sender.send(Message::Binary(frame_bytes)).await.is_err() {
+            break;
+        }
+    }
+
+    let _ = stop_tx.send(true);
+    let _ = sender.close().await;
+    recv_task.abort();
+    let _ = worker.await;
 }
 
 #[derive(Deserialize)]
@@ -1436,7 +1568,11 @@ mod tests {
         let ticket: serde_json::Value = client
             .post(format!("http://{addr_a}/p2p/v1/rooms/{room_id}/ticket"))
             .bearer_auth(&tok_a)
-            .json(&serde_json::json!({ "advertisedAddr": null }))
+            .json(&serde_json::json!({
+                "advertisedAddr": null,
+                "ttlSeconds": 600,
+                "maxUses": 1
+            }))
             .send()
             .await
             .unwrap()
@@ -1444,6 +1580,37 @@ mod tests {
             .await
             .unwrap();
         let uri = ticket["uri"].as_str().unwrap();
+        let invite_id = ticket["inviteId"].as_str().unwrap().to_string();
+        assert_eq!(ticket["maxUses"], 1);
+        assert!(ticket["expiresAtMs"].as_i64().unwrap() > ticket["issuedAtMs"].as_i64().unwrap());
+
+        // Unauthenticated invitation / member queries fail closed (401)
+        let unauth_inv = client
+            .get(format!(
+                "http://{addr_a}/p2p/v1/rooms/{room_id}/invitations"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(unauth_inv.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        // Listed invitations include active invite metadata
+        let invites: Vec<serde_json::Value> = client
+            .get(format!(
+                "http://{addr_a}/p2p/v1/rooms/{room_id}/invitations"
+            ))
+            .bearer_auth(&tok_a)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(
+            invites
+                .iter()
+                .any(|i| i["inviteId"] == invite_id && i["revoked"] == false)
+        );
 
         // Desktop B pairs directly using strict direct_only
         let paired_resp = client
@@ -1457,6 +1624,65 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(paired_resp.status(), reqwest::StatusCode::OK);
+
+        // Room members list includes inviter owner + joined member
+        let members: Vec<serde_json::Value> = client
+            .get(format!("http://{addr_a}/p2p/v1/rooms/{room_id}/members"))
+            .bearer_auth(&tok_a)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(members.len() >= 2);
+
+        // Issue a second ticket and revoke it via DELETE -> 204, then second DELETE -> 404
+        let extra_ticket: serde_json::Value = client
+            .post(format!("http://{addr_a}/p2p/v1/rooms/{room_id}/ticket"))
+            .bearer_auth(&tok_a)
+            .json(&serde_json::json!({ "ttlSeconds": 300, "maxUses": 2 }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let extra_invite_id = extra_ticket["inviteId"].as_str().unwrap();
+        let del_resp = client
+            .delete(format!(
+                "http://{addr_a}/p2p/v1/rooms/{room_id}/invitations/{extra_invite_id}"
+            ))
+            .bearer_auth(&tok_a)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(del_resp.status(), reqwest::StatusCode::NO_CONTENT);
+        let invites_after: Vec<serde_json::Value> = client
+            .get(format!(
+                "http://{addr_a}/p2p/v1/rooms/{room_id}/invitations"
+            ))
+            .bearer_auth(&tok_a)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(
+            invites_after
+                .iter()
+                .any(|i| i["inviteId"] == extra_invite_id && i["revoked"] == true)
+        );
+        let del_missing = client
+            .delete(format!(
+                "http://{addr_a}/p2p/v1/rooms/{room_id}/invitations/nonexistent-invite"
+            ))
+            .bearer_auth(&tok_a)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(del_missing.status(), reqwest::StatusCode::NOT_FOUND);
 
         // Send message from Desktop A and verify Desktop B retrieves decrypted plaintext from its own SQLite DB
         let send_resp = client
@@ -1578,6 +1804,8 @@ mod tests {
             "/p2p/v1/status",
             "/p2p/v1/rooms",
             "/p2p/v1/peers",
+            "/p2p/v1/rooms/nonexistent/invitations",
+            "/p2p/v1/rooms/nonexistent/members",
             "/p2p/v1/stealth/settings",
             "/p2p/v1/stealth/codes",
             "/p2p/v1/ghost/policy",

@@ -77,12 +77,14 @@ $QaVault = Join-Path $env:TEMP "cloak-lan-qa-$Role"
 New-Item -ItemType Directory -Force -Path $QaVault | Out-Null
 
 Write-Host "`nLaunching Cloak Desktop ($Role) with isolated QA vault: $QaVault" -ForegroundColor Green
-Write-Host "Checklist across PC A and PC B:"
-Write-Host "  [1] Verify LAN IPv4 displays in sidebar diagnostics on both PCs."
+Write-Host "Phase 12 Checklist across PC A and PC B:"
+Write-Host "  [1] Open 'Advanced Connection & Vault Diagnostics' disclosure in sidebar; verify LAN IPv4 on both PCs."
 Write-Host "  [2] Test Strict Direct-Only failure BEFORE firewall allow rule or with wrong port."
-Write-Host "  [3] Export cloakp2p://<LAN_IP>:$P2pPort?... ticket on PC A -> Pair on PC B."
+Write-Host "  [3] Export signed cloakp2p://<LAN_IP>:$P2pPort?...&inv=...&exp=...&uses=1&sig=... ticket on PC A -> Pair on PC B."
 Write-Host "  [4] Verify 20+ encrypted messages, >10 MiB file transfer SHA-256 parity, and WebRTC Video+Screen."
 Write-Host "  [5] Close app on PC B -> send 5 offline messages on PC A -> reopen PC B -> confirm sync."
+Write-Host "  [6] Single-use / Expiry / Revocation check: try reusing PC A's same single-use ticket on a 3rd vault -> rejected; revoke PC B -> verify disconnect."
+Write-Host "  [7] Stealth Lock/Unlock check: press Ctrl+Shift+L (Title -> Document Reader), unlock via PDF Search -> verify HWND returns to Cloak."
 
 & $ExecutablePath --data-dir $QaVault --p2p-bind "0.0.0.0:$P2pPort" --name "Cloak-$Role-$env:COMPUTERNAME"
 

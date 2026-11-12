@@ -850,9 +850,17 @@ impl StealthController {
             rt.lifecycle_state = StealthLifecycleState::MessengerUnlocked;
             rt.active_surface = ActiveSurface::Messenger;
             rt.visual_action = StealthVisualAction::None;
+            rt.window_focused = true;
+            rt.minimized = false;
+            rt.session_locked = false;
             rt.away_deadline_ms = None;
+            rt.away_started_ms = None;
+            rt.away_purged_for_cycle = false;
             rt.pending_step1_factor = false;
+            rt.pending_action = None;
             rt.foreground_last_input_ms = now_ms;
+            rt.foreground_idle_fired = false;
+            rt.last_transition_at_ms = now_ms;
         }
         self.persist_checkpoint_and_broadcast(None);
         Ok(UnlockOutcome {
@@ -1018,39 +1026,291 @@ impl StealthController {
 }
 
 #[cfg(target_os = "windows")]
-fn query_windows_hello_availability_sync() -> (bool, String) {
-    use base64::Engine;
-    use base64::engine::general_purpose::STANDARD;
-    let ps = r#"
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$null = [Windows.Security.Credentials.UI.UserConsentVerifier,Windows.Security.Credentials.UI,ContentType=WindowsRuntime]
-$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
-$op = [Windows.Security.Credentials.UI.UserConsentVerifier]::CheckAvailabilityAsync()
-$t = $asTaskGeneric.MakeGenericMethod([Windows.Security.Credentials.UI.UserConsentVerifierAvailability]).Invoke($null, @($op))
-Write-Output $t.Result
-"#;
-    let utf16: Vec<u8> = ps.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
-    let encoded = STANDARD.encode(utf16);
-    if let Ok(out) = std::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-EncodedCommand",
-            &encoded,
-        ])
-        .output()
-    {
-        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if stdout.contains("Available") {
-            return (true, "Available (Windows Hello configured)".into());
+mod winrt_hello {
+    use core::ffi::c_void;
+    use std::time::{Duration, Instant};
+
+    use crate::error::{P2pError, P2pResult};
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Guid {
+        data1: u32,
+        data2: u16,
+        data3: u16,
+        data4: [u8; 8],
+    }
+
+    const IID_IUSER_CONSENT_VERIFIER_STATICS: Guid = Guid {
+        data1: 0xaf4f3f91,
+        data2: 0x564c,
+        data3: 0x4ddc,
+        data4: [0xb8, 0xb5, 0x97, 0x34, 0x47, 0x62, 0x7c, 0x65],
+    };
+    const IID_IASYNC_INFO: Guid = Guid {
+        data1: 0x00000036,
+        data2: 0x0000,
+        data3: 0x0000,
+        data4: [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+
+    const RO_INIT_MULTITHREADED: u32 = 1;
+    const RPC_E_CHANGED_MODE: i32 = -2147417850; // 0x80010106
+
+    #[repr(C)]
+    struct ComVtblHeader {
+        query_interface:
+            unsafe extern "system" fn(*mut c_void, *const Guid, *mut *mut c_void) -> i32,
+        _add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+        release: unsafe extern "system" fn(*mut c_void) -> u32,
+        _get_iids: unsafe extern "system" fn(*mut c_void, *mut u32, *mut *mut Guid) -> i32,
+        _get_runtime_class_name: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+        _get_trust_level: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
+    }
+
+    #[repr(C)]
+    struct IUserConsentVerifierStaticsVtbl {
+        base: ComVtblHeader,
+        check_availability_async: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+        request_verification_async:
+            unsafe extern "system" fn(*mut c_void, *mut c_void, *mut *mut c_void) -> i32,
+    }
+
+    #[repr(C)]
+    struct IAsyncInfoVtbl {
+        base: ComVtblHeader,
+        _id: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+        status: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
+        error_code: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
+        _cancel: unsafe extern "system" fn(*mut c_void) -> i32,
+        _close: unsafe extern "system" fn(*mut c_void) -> i32,
+    }
+
+    #[repr(C)]
+    struct IAsyncOperationU32Vtbl {
+        base: ComVtblHeader,
+        _put_completed: unsafe extern "system" fn(*mut c_void, *mut c_void) -> i32,
+        _get_completed: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+        get_results: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+    }
+
+    type FnRoInitialize = unsafe extern "system" fn(u32) -> i32;
+    type FnRoUninitialize = unsafe extern "system" fn();
+    type FnRoGetActivationFactory =
+        unsafe extern "system" fn(*mut c_void, *const Guid, *mut *mut c_void) -> i32;
+    type FnWindowsCreateString =
+        unsafe extern "system" fn(*const u16, u32, *mut *mut c_void) -> i32;
+    type FnWindowsDeleteString = unsafe extern "system" fn(*mut c_void) -> i32;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LoadLibraryA(lp_lib_file_name: *const u8) -> *mut c_void;
+        fn GetProcAddress(h_module: *mut c_void, lp_proc_name: *const u8) -> *const c_void;
+    }
+
+    struct CombaseFns {
+        ro_initialize: FnRoInitialize,
+        ro_uninitialize: FnRoUninitialize,
+        ro_get_activation_factory: FnRoGetActivationFactory,
+        windows_create_string: FnWindowsCreateString,
+        windows_delete_string: FnWindowsDeleteString,
+    }
+
+    unsafe fn load_combase() -> P2pResult<CombaseFns> {
+        let hmod = unsafe { LoadLibraryA(c"combase.dll".as_ptr() as *const u8) };
+        if hmod.is_null() {
+            return Err(P2pError::Protocol("combase.dll unavailable".into()));
         }
-        if !stdout.is_empty() {
-            return (false, format!("Unavailable ({stdout})"));
+        macro_rules! sym {
+            ($name:literal, $ty:ty) => {{
+                let p = unsafe { GetProcAddress(hmod, $name.as_ptr() as *const u8) };
+                if p.is_null() {
+                    return Err(P2pError::Protocol(format!(
+                        "Missing combase symbol {}",
+                        $name.to_string_lossy()
+                    )));
+                }
+                unsafe { std::mem::transmute::<*const c_void, $ty>(p) }
+            }};
+        }
+        Ok(CombaseFns {
+            ro_initialize: sym!(c"RoInitialize", FnRoInitialize),
+            ro_uninitialize: sym!(c"RoUninitialize", FnRoUninitialize),
+            ro_get_activation_factory: sym!(c"RoGetActivationFactory", FnRoGetActivationFactory),
+            windows_create_string: sym!(c"WindowsCreateString", FnWindowsCreateString),
+            windows_delete_string: sym!(c"WindowsDeleteString", FnWindowsDeleteString),
+        })
+    }
+
+    unsafe fn release_com(ptr: *mut c_void) {
+        if !ptr.is_null() {
+            let vtbl = unsafe { *(ptr as *const *const ComVtblHeader) };
+            unsafe { ((*vtbl).release)(ptr) };
         }
     }
-    (false, "Unavailable on this Windows session".into())
+
+    unsafe fn make_hstring(fns: &CombaseFns, text: &str) -> P2pResult<*mut c_void> {
+        let wide: Vec<u16> = text.encode_utf16().collect();
+        let mut hstr: *mut c_void = std::ptr::null_mut();
+        let hr =
+            unsafe { (fns.windows_create_string)(wide.as_ptr(), wide.len() as u32, &mut hstr) };
+        if hr < 0 || hstr.is_null() {
+            return Err(P2pError::Protocol(format!(
+                "WindowsCreateString failed (0x{:08x})",
+                hr as u32
+            )));
+        }
+        Ok(hstr)
+    }
+
+    unsafe fn await_async_u32(op: *mut c_void, timeout: Duration) -> P2pResult<u32> {
+        let vtbl = unsafe { *(op as *const *const ComVtblHeader) };
+        let mut async_info: *mut c_void = std::ptr::null_mut();
+        let hr_qi = unsafe { ((*vtbl).query_interface)(op, &IID_IASYNC_INFO, &mut async_info) };
+        if hr_qi < 0 || async_info.is_null() {
+            return Err(P2pError::Protocol(format!(
+                "IAsyncInfo QI failed (0x{:08x})",
+                hr_qi as u32
+            )));
+        }
+        let info_vtbl = unsafe { *(async_info as *const *const IAsyncInfoVtbl) };
+        let deadline = Instant::now() + timeout;
+        let final_status = loop {
+            let mut status = 0i32;
+            let hr_st = unsafe { ((*info_vtbl).status)(async_info, &mut status) };
+            if hr_st < 0 {
+                unsafe { release_com(async_info) };
+                return Err(P2pError::Protocol(format!(
+                    "IAsyncInfo::Status failed (0x{:08x})",
+                    hr_st as u32
+                )));
+            }
+            if status != 0 {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                unsafe { release_com(async_info) };
+                return Err(P2pError::Protocol("WinRT operation timed out".into()));
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        if final_status != 1 {
+            let mut err_code = 0i32;
+            let _ = unsafe { ((*info_vtbl).error_code)(async_info, &mut err_code) };
+            unsafe { release_com(async_info) };
+            return Err(P2pError::Protocol(format!(
+                "WinRT async status={final_status} err=0x{:08x}",
+                err_code as u32
+            )));
+        }
+        unsafe { release_com(async_info) };
+        let op_vtbl = unsafe { *(op as *const *const IAsyncOperationU32Vtbl) };
+        let mut result = 0u32;
+        let hr_res = unsafe { ((*op_vtbl).get_results)(op, &mut result) };
+        if hr_res < 0 {
+            return Err(P2pError::Protocol(format!(
+                "IAsyncOperation::GetResults failed (0x{:08x})",
+                hr_res as u32
+            )));
+        }
+        Ok(result)
+    }
+
+    fn run_on_mta<F, T>(f: F) -> P2pResult<T>
+    where
+        F: FnOnce(&CombaseFns, *mut c_void) -> P2pResult<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        std::thread::spawn(move || unsafe {
+            let fns = load_combase()?;
+            let hr_init = (fns.ro_initialize)(RO_INIT_MULTITHREADED);
+            let should_uninit = hr_init >= 0;
+            if hr_init < 0 && hr_init != RPC_E_CHANGED_MODE {
+                return Err(P2pError::Protocol(format!(
+                    "RoInitialize failed (0x{:08x})",
+                    hr_init as u32
+                )));
+            }
+
+            let res = (|| {
+                let class_id =
+                    make_hstring(&fns, "Windows.Security.Credentials.UI.UserConsentVerifier")?;
+                let mut factory: *mut c_void = std::ptr::null_mut();
+                let hr_fac = (fns.ro_get_activation_factory)(
+                    class_id,
+                    &IID_IUSER_CONSENT_VERIFIER_STATICS,
+                    &mut factory,
+                );
+                let _ = (fns.windows_delete_string)(class_id);
+                if hr_fac < 0 || factory.is_null() {
+                    return Err(P2pError::Protocol(format!(
+                        "RoGetActivationFactory failed (0x{:08x})",
+                        hr_fac as u32
+                    )));
+                }
+                let out = f(&fns, factory);
+                release_com(factory);
+                out
+            })();
+
+            if should_uninit {
+                (fns.ro_uninitialize)();
+            }
+            res
+        })
+        .join()
+        .map_err(|_| P2pError::Protocol("WinRT worker thread panicked".into()))?
+    }
+
+    pub fn check_availability() -> (bool, String) {
+        let res = run_on_mta(|_fns, factory| unsafe {
+            let vtbl = *(factory as *const *const IUserConsentVerifierStaticsVtbl);
+            let mut op: *mut c_void = std::ptr::null_mut();
+            let hr = ((*vtbl).check_availability_async)(factory, &mut op);
+            if hr < 0 || op.is_null() {
+                return Err(P2pError::Protocol(format!(
+                    "CheckAvailabilityAsync failed (0x{:08x})",
+                    hr as u32
+                )));
+            }
+            let val = await_async_u32(op, Duration::from_secs(4));
+            release_com(op);
+            val
+        });
+        match res {
+            Ok(0) => (true, "Available (Windows Hello configured)".into()),
+            Ok(1) => (false, "Unavailable (DeviceNotPresent)".into()),
+            Ok(2) => (false, "Unavailable (NotConfiguredForUser)".into()),
+            Ok(3) => (false, "Unavailable (DisabledByPolicy)".into()),
+            Ok(4) => (false, "Unavailable (DeviceBusy)".into()),
+            Ok(other) => (false, format!("Unavailable (code {other})")),
+            Err(err) => (false, format!("Unavailable ({err})")),
+        }
+    }
+
+    pub fn request_verification() -> P2pResult<bool> {
+        run_on_mta(|fns, factory| unsafe {
+            let msg = make_hstring(fns, "Unlock Cloak Private Workspace")?;
+            let vtbl = *(factory as *const *const IUserConsentVerifierStaticsVtbl);
+            let mut op: *mut c_void = std::ptr::null_mut();
+            let hr = ((*vtbl).request_verification_async)(factory, msg, &mut op);
+            let _ = (fns.windows_delete_string)(msg);
+            if hr < 0 || op.is_null() {
+                return Err(P2pError::Protocol(format!(
+                    "RequestVerificationAsync failed (0x{:08x})",
+                    hr as u32
+                )));
+            }
+            let val = await_async_u32(op, Duration::from_secs(60));
+            release_com(op);
+            Ok(val? == 0)
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn query_windows_hello_availability_sync() -> (bool, String) {
+    winrt_hello::check_availability()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1060,27 +1320,32 @@ fn query_windows_hello_availability_sync() -> (bool, String) {
 
 #[cfg(target_os = "windows")]
 fn request_windows_hello_verification_sync() -> P2pResult<bool> {
-    use base64::Engine;
-    use base64::engine::general_purpose::STANDARD;
-    let ps = r#"
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$null = [Windows.Security.Credentials.UI.UserConsentVerifier,Windows.Security.Credentials.UI,ContentType=WindowsRuntime]
-$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
-$op = [Windows.Security.Credentials.UI.UserConsentVerifier]::RequestVerificationAsync("Unlock Cloak Private Workspace")
-$t = $asTaskGeneric.MakeGenericMethod([Windows.Security.Credentials.UI.UserConsentVerificationResult]).Invoke($null, @($op))
-Write-Output $t.Result
-"#;
-    let utf16: Vec<u8> = ps.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
-    let encoded = STANDARD.encode(utf16);
-    let out = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
-        .output()
-        .map_err(|e| P2pError::Protocol(format!("Windows Hello invocation failed: {e}")))?;
-    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    Ok(stdout.contains("Verified"))
+    winrt_hello::request_verification()
 }
 
 #[cfg(not(target_os = "windows"))]
 fn request_windows_hello_verification_sync() -> P2pResult<bool> {
     Ok(false)
+}
+
+#[cfg(test)]
+mod winrt_hello_tests {
+    use super::query_windows_hello_availability_sync;
+    use std::time::Instant;
+
+    #[test]
+    fn windows_hello_native_winrt_probe_is_fast_and_well_formed() {
+        let start = Instant::now();
+        let (available, detail) = query_windows_hello_availability_sync();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_secs_f64() < 1.5,
+            "Native WinRT hello probe took unexpectedly long: {elapsed:?}"
+        );
+        assert!(
+            available && detail.starts_with("Available")
+                || !available && detail.starts_with("Unavailable"),
+            "Unexpected availability tuple: ({available}, {detail})"
+        );
+    }
 }

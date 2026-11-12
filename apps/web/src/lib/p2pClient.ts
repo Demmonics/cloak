@@ -41,6 +41,32 @@ export interface P2pRoom {
   createdAt: string;
 }
 
+export interface P2pRoomInvitation {
+  inviteId: string;
+  roomId: string;
+  issuedAtMs: number;
+  expiresAtMs: number;
+  maxUses: number;
+  usesCount: number;
+  revoked: boolean;
+}
+
+export interface P2pRoomMember {
+  roomId: string;
+  deviceId: string;
+  role: string;
+  addedAt: string;
+  revoked: boolean;
+}
+
+export interface P2pExportTicketResponse {
+  uri: string;
+  inviteId: string;
+  issuedAtMs: number;
+  expiresAtMs: number;
+  maxUses: number;
+}
+
 export interface P2pChannel {
   id: string;
   roomId: string;
@@ -581,11 +607,28 @@ export const p2pApi = {
     }),
   listChannels: (roomId: string) =>
     p2pRequest<P2pChannel[]>(`/rooms/${encodeURIComponent(roomId)}/channels`),
-  exportTicket: (roomId: string, advertisedAddr?: string) =>
-    p2pRequest<{ uri: string }>(`/rooms/${encodeURIComponent(roomId)}/ticket`, {
+  exportTicket: (
+    roomId: string,
+    advertisedAddr?: string,
+    opts?: { ttlSeconds?: number; maxUses?: number },
+  ) =>
+    p2pRequest<P2pExportTicketResponse>(`/rooms/${encodeURIComponent(roomId)}/ticket`, {
       method: 'POST',
-      body: JSON.stringify({ advertisedAddr: advertisedAddr || null }),
+      body: JSON.stringify({
+        advertisedAddr: advertisedAddr || null,
+        ttlSeconds: opts?.ttlSeconds ?? null,
+        maxUses: opts?.maxUses ?? null,
+      }),
     }),
+  listRoomInvitations: (roomId: string) =>
+    p2pRequest<P2pRoomInvitation[]>(`/rooms/${encodeURIComponent(roomId)}/invitations`),
+  revokeRoomInvitation: (roomId: string, inviteId: string) =>
+    p2pRequest<void>(
+      `/rooms/${encodeURIComponent(roomId)}/invitations/${encodeURIComponent(inviteId)}`,
+      { method: 'DELETE' },
+    ),
+  listRoomMembers: (roomId: string) =>
+    p2pRequest<P2pRoomMember[]>(`/rooms/${encodeURIComponent(roomId)}/members`),
   pairWithTicket: (uri: string, connectivityMode: P2pConnectivityMode) =>
     p2pRequest<{ room: P2pRoom; channel: P2pChannel }>('/pair', {
       method: 'POST',
@@ -702,6 +745,16 @@ export const p2pApi = {
       throw new P2pApiError(resp.status, 'CAPTURE_FAILED', `Capture frame failed (${resp.status})`);
     }
     return await resp.blob();
+  },
+  openCaptureStreamSocket: (sourceId: string, maxWidth = 1280, fps = 30): WebSocket => {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const tok = getP2pSessionToken();
+    const tokenParam = tok ? `&token=${encodeURIComponent(tok)}` : '';
+    const socket = new WebSocket(
+      `${proto}//${window.location.host}/p2p/v1/capture/stream/${encodeURIComponent(sourceId)}?maxWidth=${maxWidth}&fps=${fps}${tokenParam}`,
+    );
+    socket.binaryType = 'arraybuffer';
+    return socket;
   },
   pickNativeFiles: (roomId: string) =>
     p2pRequest<P2pAttachmentMeta[]>('/dialog/pick-files', {

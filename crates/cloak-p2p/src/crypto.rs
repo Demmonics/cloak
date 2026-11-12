@@ -534,6 +534,63 @@ pub fn decrypt_and_verify_message(
     Ok((text, verified))
 }
 
+/// Signs an arbitrary domain-separated protocol payload using the local Ed25519 device key.
+pub fn sign_text(identity: &DeviceIdentity, payload: &str) -> P2pResult<String> {
+    let signing_key = identity.signing_key()?;
+    let sig = signing_key.sign(payload.as_bytes());
+    Ok(STANDARD.encode(sig.to_bytes()))
+}
+
+/// Verifies an Ed25519 base64 signature over a domain-separated protocol payload.
+pub fn verify_text_signature(
+    ed25519_public_b64: &str,
+    payload: &str,
+    signature_b64: &str,
+) -> P2pResult<()> {
+    let vk = parse_ed25519_verifying(ed25519_public_b64)?;
+    let sig_bytes = STANDARD
+        .decode(signature_b64.trim())
+        .map_err(|_| P2pError::PeerRejected("Invalid Ed25519 signature base64".into()))?;
+    if sig_bytes.len() != 64 {
+        return Err(P2pError::PeerRejected(
+            "Invalid Ed25519 signature length".into(),
+        ));
+    }
+    let mut sig_arr = [0u8; 64];
+    sig_arr.copy_from_slice(&sig_bytes);
+    let sig = Signature::from_bytes(&sig_arr);
+    vk.verify(payload.as_bytes(), &sig)
+        .map_err(|_| P2pError::PeerRejected("Ed25519 signature verification failed".into()))
+}
+
+/// Verifies an incoming `StoredMessage` Ed25519 signature without requiring room plaintext decryption.
+pub fn verify_stored_message_signature(
+    msg: &crate::model::StoredMessage,
+    sender_ed25519_pub_b64: &str,
+) -> bool {
+    let aad = format!(
+        "cloak-p2p-msg-v1:{}:{}:{}:{}",
+        msg.room_id, msg.channel_id, msg.id, msg.encryption_epoch
+    );
+    let sig_input = format!("{aad}:{}", msg.ciphertext_b64);
+    verify_text_signature(sender_ed25519_pub_b64, &sig_input, &msg.signature_b64).is_ok()
+}
+
+/// Verifies an incoming `MessageEdit` Ed25519 signature over the updated ciphertext commitment.
+pub fn verify_message_edit_signature(
+    room_id: &str,
+    channel_id: &str,
+    message_id: &str,
+    epoch: i64,
+    new_ciphertext_b64: &str,
+    new_signature_b64: &str,
+    sender_ed25519_pub_b64: &str,
+) -> bool {
+    let aad = format!("cloak-p2p-msg-v1:{room_id}:{channel_id}:{message_id}:{epoch}");
+    let sig_input = format!("{aad}:{new_ciphertext_b64}");
+    verify_text_signature(sender_ed25519_pub_b64, &sig_input, new_signature_b64).is_ok()
+}
+
 /// Handshake initial hello signed by each peer to mutually authenticate identity + ephemeral X25519 keys.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

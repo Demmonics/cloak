@@ -110,7 +110,13 @@ test.describe('Cloak Phase 9 Native Rust P2P Desktop + Ghost Mode + Real WebRTC 
       await expect(pageB.getByText('DesktopBob')).toBeVisible();
       expect(pageA.url()).not.toContain(tokA);
 
-      // Verify DPAPI & LAN diagnostics rendered cleanly
+      // Verify diagnostics start collapsed and expand cleanly via disclosure toggle
+      const diagToggle = pageA.getByRole('button', {
+        name: /Advanced Connection & Vault Diagnostics/i,
+      });
+      await expect(diagToggle).toHaveAttribute('aria-expanded', 'false');
+      await diagToggle.click();
+      await expect(diagToggle).toHaveAttribute('aria-expanded', 'true');
       await expect(pageA.getByText('DPAPI')).toBeVisible();
       await expect(pageA.getByText(/LAN IPv4:/)).toBeVisible();
 
@@ -122,6 +128,7 @@ test.describe('Cloak Phase 9 Native Rust P2P Desktop + Ghost Mode + Real WebRTC 
       await pageA.getByRole('button', { name: 'Generate Ticket' }).click();
       const ticketUri = await pageA.getByLabel('Shareable pairing ticket').inputValue();
       expect(ticketUri).toMatch(/^cloakp2p:\/\/.+\?/);
+      await expect(pageA.getByText(/Single-use · signed/i)).toBeVisible();
 
       const badTicket = ticketUri.replace(/:(\d+)\?/, ':19999?');
       await pageB.getByPlaceholder('Paste peer cloakp2p://... ticket').fill(badTicket);
@@ -343,7 +350,7 @@ test.describe('Cloak Phase 9 Native Rust P2P Desktop + Ghost Mode + Real WebRTC 
       await expect(pageA.locator('[data-message-id]')).toHaveCount(0);
 
       // Revoke Bob from Alice's peer list
-      await pageA.getByRole('button', { name: 'Revoke' }).click();
+      await pageA.getByRole('button', { name: 'Revoke', exact: true }).click();
       await expect(pageA.getByText('Revoked', { exact: true })).toBeVisible();
     } finally {
       await ctxA.close();

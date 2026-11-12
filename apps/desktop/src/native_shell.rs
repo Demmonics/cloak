@@ -6,7 +6,8 @@ mod imp {
     use std::time::{Duration, Instant};
 
     use cloak_p2p::{
-        GhostTriggerKind, NodeEvent, P2pNode, PrivacyTriggerKind, StealthBootstrapState,
+        ActiveSurface, GhostTriggerKind, NodeEvent, P2pNode, PrivacyTriggerKind,
+        StealthBootstrapState,
     };
     use tao::dpi::LogicalSize;
     use tao::event::{Event, WindowEvent};
@@ -52,6 +53,7 @@ mod imp {
         PowerResume,
         CaptureProtection(bool),
         StealthUpdated(Box<StealthBootstrapState>),
+        SyncAuthoritativeTitle,
         TrayShow,
         TraySwitchPdf,
         TrayLockNow,
@@ -175,10 +177,14 @@ mod imp {
             "window.__CLOAK_SESSION_TOKEN__ = {token_escaped}; window.__CLOAK_NATIVE_SHELL__ = true;"
         );
 
+        let doc_title_proxy = proxy.clone();
         let mut webview = Some(
             WebViewBuilder::with_web_context(&mut web_context)
                 .with_url(url)
                 .with_initialization_script(&init_js)
+                .with_document_title_changed_handler(move |_title| {
+                    let _ = doc_title_proxy.send_event(ShellUserEvent::SyncAuthoritativeTitle);
+                })
                 .with_devtools(cfg!(debug_assertions))
                 .build(&window)?,
         );
@@ -225,19 +231,30 @@ mod imp {
         // Propagate Rust P2pNode Ghost & Stealth state changes directly onto HWND / window title
         let mut rx = node.subscribe();
         let cap_proxy = proxy.clone();
+        let sync_node = node.clone();
         std::thread::spawn(move || {
-            while let Ok(ev) = rx.blocking_recv() {
-                match ev {
-                    NodeEvent::GhostStateChanged(st) => {
+            loop {
+                match rx.blocking_recv() {
+                    Ok(NodeEvent::GhostStateChanged(st)) => {
                         let _ = cap_proxy.send_event(ShellUserEvent::CaptureProtection(
                             st.capture_protection_active,
                         ));
                     }
-                    NodeEvent::StealthStateChanged(boot) => {
+                    Ok(NodeEvent::StealthStateChanged(boot)) => {
                         let _ =
                             cap_proxy.send_event(ShellUserEvent::StealthUpdated(Box::new(boot)));
                     }
-                    _ => {}
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let boot = sync_node.get_stealth_bootstrap();
+                        let _ =
+                            cap_proxy.send_event(ShellUserEvent::StealthUpdated(Box::new(boot)));
+                        let st = sync_node.get_ghost_state();
+                        let _ = cap_proxy.send_event(ShellUserEvent::CaptureProtection(
+                            st.capture_protection_active,
+                        ));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
         });
@@ -364,8 +381,19 @@ mod imp {
                 Event::UserEvent(ShellUserEvent::StealthUpdated(boot)) => {
                     window.set_title(&boot.window_title);
                     if let Some(ref ti) = tray_icon {
-                        let _ = ti.set_tooltip(Some(&boot.window_title));
+                        let tip = if boot.stealth_enabled
+                            && (boot.locked || boot.active_surface != ActiveSurface::Messenger)
+                        {
+                            boot.window_title.as_str()
+                        } else {
+                            "Cloak — Encrypted Local-First P2P"
+                        };
+                        let _ = ti.set_tooltip(Some(tip));
                     }
+                }
+                Event::UserEvent(ShellUserEvent::SyncAuthoritativeTitle) => {
+                    let boot = node.get_stealth_bootstrap();
+                    window.set_title(&boot.window_title);
                 }
                 Event::UserEvent(ShellUserEvent::CaptureProtection(active)) => unsafe {
                     let aff = if active {

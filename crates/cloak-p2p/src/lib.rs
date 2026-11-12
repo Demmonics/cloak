@@ -17,7 +17,8 @@ pub use model::{
     GhostModeLevel, GhostPolicy, GhostRoomOverride, GhostRuntimeState, GhostTriggerKind,
     GhostTriggers, LocalAttachmentMeta, LocalChannel, LocalRoom, NetworkDiagnostics,
     NetworkInterfaceCandidate, NodeEvent, OutgoingViewedPolicy, PairingTicket, PeerConnectionState,
-    PeerSummary, StoredMessage, TombstoneScope, WebRtcSignalPayload, WireFrame,
+    PeerSummary, RoomInvitationSummary, RoomMemberSummary, StoredMessage, TombstoneScope,
+    WebRtcSignalPayload, WireFrame,
 };
 pub use stealth::{
     ActiveCallPrivacySummary, ActiveSurface, AttachmentPurgeAction, CallPrivacySettings,
@@ -238,17 +239,25 @@ mod tests {
         drop(closed_listener);
 
         let fake_ident = crypto::DeviceIdentity::generate("UnreachablePeer");
-        let ticket = PairingTicket {
-            device_id: fake_ident.device_id,
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let mut ticket = PairingTicket {
+            device_id: fake_ident.device_id.clone(),
             display_name: "UnreachablePeer".into(),
-            ed25519_public_key_b64: fake_ident.ed25519_public_b64,
-            x25519_public_key_b64: fake_ident.x25519_public_b64,
+            ed25519_public_key_b64: fake_ident.ed25519_public_b64.clone(),
+            x25519_public_key_b64: fake_ident.x25519_public_b64.clone(),
             direct_addr: closed_addr.to_string(),
             alternate_addrs: vec![],
             room_id: Uuid::new_v4().to_string(),
             room_name: "Test".into(),
             room_key_b64: crypto::generate_room_key_b64(),
+            invite_id: Uuid::new_v4().to_string(),
+            issued_at_ms: now_ms,
+            expires_at_ms: now_ms + 60_000,
+            max_uses: 1,
+            invite_sig_b64: String::new(),
         };
+        ticket.invite_sig_b64 =
+            crypto::sign_text(&fake_ident, &ticket.invite_signing_payload()).unwrap();
 
         let err = node
             .pair_and_connect(&ticket, ConnectivityMode::DirectOnly)
@@ -742,5 +751,226 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn signed_invitation_replay_expiry_revocation_and_tamper_rejected() {
+        let dir_alice = temp_vault_dir("inv-alice");
+        let dir_bob = temp_vault_dir("inv-bob");
+        let dir_charlie = temp_vault_dir("inv-charlie");
+
+        let alice = P2pNode::start(&dir_alice, "127.0.0.1:0", "Alice")
+            .await
+            .expect("alice");
+        let bob = P2pNode::start(&dir_bob, "127.0.0.1:0", "Bob")
+            .await
+            .expect("bob");
+        let charlie = P2pNode::start(&dir_charlie, "127.0.0.1:0", "Charlie")
+            .await
+            .expect("charlie");
+
+        let (room, chan, _) = alice.create_room("VIP Ops", None).unwrap();
+        alice
+            .send_message(
+                &room.id,
+                &chan.id,
+                "Alice confidential brief",
+                vec![],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // 1) Tampered ticket URI (e.g. bumping maxUses without inviter's private Ed25519 key) MUST fail signature check
+        let ticket = alice.export_pairing_ticket(&room.id, None).unwrap();
+        let mut tampered = ticket.clone();
+        tampered.max_uses = 99;
+        let tamper_err = bob
+            .pair_and_connect(&tampered, ConnectivityMode::DirectOnly)
+            .await
+            .expect_err("tampered ticket max_uses must fail Ed25519 verification");
+        assert!(matches!(tamper_err, P2pError::PeerRejected(_)));
+
+        // 2) Expired ticket MUST fail immediately
+        let mut expired_ticket = ticket.clone();
+        expired_ticket.expires_at_ms = chrono::Utc::now().timestamp_millis() - 5_000;
+        let exp_err = bob
+            .pair_and_connect(&expired_ticket, ConnectivityMode::DirectOnly)
+            .await
+            .expect_err("expired ticket must be rejected");
+        assert!(matches!(exp_err, P2pError::PeerRejected(_)));
+
+        // 3) Valid single-use ticket succeeds for Bob
+        bob.pair_and_connect(&ticket, ConnectivityMode::DirectOnly)
+            .await
+            .expect("bob valid pairing");
+        let mut bob_synced = false;
+        for _ in 0..40 {
+            if let Ok(msgs) = bob.list_decrypted_messages(&room.id, &chan.id)
+                && msgs.iter().any(|m| m.text == "Alice confidential brief")
+            {
+                bob_synced = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert!(
+            bob_synced,
+            "Bob must receive synced secret via valid ticket"
+        );
+
+        // 4) Single-use replay by Charlie using the SAME ticket URI MUST be rejected synchronously by Alice!
+        let replay_err = charlie
+            .pair_and_connect(&ticket, ConnectivityMode::DirectOnly)
+            .await
+            .expect_err("replayed single-use ticket must be rejected explicitly");
+        assert!(matches!(replay_err, P2pError::PeerRejected(_)));
+        let charlie_id = charlie.identity().unwrap().device_id;
+        let alice_members = alice.list_room_members(&room.id).unwrap();
+        assert!(
+            !alice_members.iter().any(|m| m.device_id == charlie_id),
+            "Charlie replaying a single-use ticket must NEVER gain room membership"
+        );
+        assert!(
+            charlie
+                .list_decrypted_messages(&room.id, &chan.id)
+                .unwrap_or_default()
+                .is_empty(),
+            "Charlie must receive ZERO room messages on replayed single-use ticket"
+        );
+
+        // 5) Revoked invitation MUST also reject new redeemers before first use
+        let revocable = alice.export_pairing_ticket(&room.id, None).unwrap();
+        assert!(
+            alice
+                .revoke_room_invitation(&room.id, &revocable.invite_id)
+                .unwrap()
+        );
+        let dir_dave = temp_vault_dir("inv-dave");
+        let dave = P2pNode::start(&dir_dave, "127.0.0.1:0", "Dave")
+            .await
+            .expect("dave");
+        let revoked_err = dave
+            .pair_and_connect(&revocable, ConnectivityMode::DirectOnly)
+            .await
+            .expect_err("revoked invitation must be rejected explicitly");
+        assert!(matches!(revoked_err, P2pError::PeerRejected(_)));
+        let dave_id = dave.identity().unwrap().device_id;
+        assert!(
+            !alice
+                .list_room_members(&room.id)
+                .unwrap()
+                .iter()
+                .any(|m| m.device_id == dave_id),
+            "Revoked ticket must NOT admit Dave"
+        );
+        assert!(
+            dave.list_decrypted_messages(&room.id, &chan.id)
+                .unwrap_or_default()
+                .is_empty(),
+            "Dave must receive ZERO messages from revoked ticket"
+        );
+
+        dave.shutdown();
+        charlie.shutdown();
+        bob.shutdown();
+        alice.shutdown();
+        let _ = std::fs::remove_dir_all(&dir_alice);
+        let _ = std::fs::remove_dir_all(&dir_bob);
+        let _ = std::fs::remove_dir_all(&dir_charlie);
+        let _ = std::fs::remove_dir_all(&dir_dave);
+    }
+
+    #[tokio::test]
+    async fn cross_room_broadcast_isolation_and_revocation_cleanup() {
+        let dir_alice = temp_vault_dir("iso-alice");
+        let dir_bob = temp_vault_dir("iso-bob");
+
+        let alice = P2pNode::start(&dir_alice, "127.0.0.1:0", "Alice")
+            .await
+            .expect("alice");
+        let bob = P2pNode::start(&dir_bob, "127.0.0.1:0", "Bob")
+            .await
+            .expect("bob");
+
+        let (room1, chan1, _) = alice.create_room("Room One", None).unwrap();
+        let (room2, chan2, _) = alice.create_room("Room Two Secret", None).unwrap();
+
+        // Pair Bob strictly into Room One
+        let t1 = alice.export_pairing_ticket(&room1.id, None).unwrap();
+        bob.pair_and_connect(&t1, ConnectivityMode::DirectOnly)
+            .await
+            .expect("pair bob to room1");
+
+        // Send in Room Two -> Bob is on an active TCP connection with Alice, MUST NEVER receive Room Two messages!
+        alice
+            .send_message(
+                &room2.id,
+                &chan2.id,
+                "ROOM TWO EYES ONLY",
+                vec![],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        alice
+            .send_message(&room1.id, &chan1.id, "Room One Hello", vec![], None, None)
+            .await
+            .unwrap();
+
+        let mut got_r1 = false;
+        for _ in 0..40 {
+            if let Ok(msgs) = bob.list_decrypted_messages(&room1.id, &chan1.id)
+                && msgs.iter().any(|m| m.text == "Room One Hello")
+            {
+                got_r1 = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert!(got_r1, "Bob must receive Room One broadcast");
+        assert!(
+            !bob.list_rooms().unwrap().iter().any(|r| r.id == room2.id),
+            "Bob must NEVER learn about or store Room Two"
+        );
+        assert!(
+            bob.list_decrypted_messages(&room2.id, &chan2.id).is_err(),
+            "Bob must NOT have Room Two keys or history"
+        );
+
+        // Revoking Bob MUST close active transport, mark room_members revoked, and purge queued outbox
+        let bob_id = bob.identity().unwrap().device_id;
+        alice.revoke_peer(&bob_id, true).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            alice.active_peer_ids().await.is_empty(),
+            "Revoking peer must immediately drop active TCP handle"
+        );
+        // Queue a new message in Room One on Alice while Bob is revoked -> Bob must NOT even get outbox queued frames
+        alice
+            .send_message(
+                &room1.id,
+                &chan1.id,
+                "Post revocation secret",
+                vec![],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(
+            bob.list_decrypted_messages(&room1.id, &chan1.id)
+                .unwrap()
+                .iter()
+                .all(|m| m.text != "Post revocation secret"),
+            "Revoked peer must never receive subsequent broadcasts"
+        );
+
+        bob.shutdown();
+        alice.shutdown();
+        let _ = std::fs::remove_dir_all(&dir_alice);
+        let _ = std::fs::remove_dir_all(&dir_bob);
     }
 }

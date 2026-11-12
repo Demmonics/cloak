@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import {
   Archive,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   CornerUpLeft,
   Download,
@@ -35,9 +37,6 @@ import { DISAPPEARING_MESSAGE_OPTIONS } from '@cloak/config';
 import { Avatar, Button, ConfirmDialog, ModalDialog, Skeleton } from '@cloak/ui';
 import { ThemeToggle } from '../components/ThemeToggle.js';
 import { P2pAttachmentItem } from '../components/p2p/P2pAttachmentItem.js';
-import { P2pGhostSettingsModal } from '../components/p2p/P2pGhostSettingsModal.js';
-import { PdfReaderShell } from '../components/pdf/PdfReaderShell.js';
-import { P2pStealthSettingsModal } from '../components/stealth/P2pStealthSettingsModal.js';
 import {
   P2pMediaDock,
   SCREEN_PRESETS,
@@ -63,12 +62,30 @@ import {
   type P2pPdfDocument,
   type P2pPeerSummary,
   type P2pRoom,
+  type P2pRoomInvitation,
+  type P2pRoomMember,
   type P2pStealthBootstrapState,
   type P2pStealthConfig,
   type P2pUnlockOutcome,
   type P2pWebRtcSignal,
   type UnlockMethod,
 } from '../lib/p2pClient.js';
+
+const P2pGhostSettingsModal = React.lazy(() =>
+  import('../components/p2p/P2pGhostSettingsModal.js').then((m) => ({
+    default: m.P2pGhostSettingsModal,
+  })),
+);
+const PdfReaderShell = React.lazy(() =>
+  import('../components/pdf/PdfReaderShell.js').then((m) => ({
+    default: m.PdfReaderShell,
+  })),
+);
+const P2pStealthSettingsModal = React.lazy(() =>
+  import('../components/stealth/P2pStealthSettingsModal.js').then((m) => ({
+    default: m.P2pStealthSettingsModal,
+  })),
+);
 import {
   escapeHtmlText,
   renderMarkdownToUnsafeHtml,
@@ -216,6 +233,16 @@ export function P2pWorkspacePage() {
   const [advertisedAddr, setAdvertisedAddr] = useState('');
   const [ticketUri, setTicketUri] = useState('');
   const [copiedTicket, setCopiedTicket] = useState(false);
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
+  const [inviteTtlSec, setInviteTtlSec] = useState<number>(900);
+  const [inviteMaxUses, setInviteMaxUses] = useState<number>(1);
+  const [lastTicketMeta, setLastTicketMeta] = useState<{
+    inviteId: string;
+    expiresAtMs: number;
+    maxUses: number;
+  } | null>(null);
+  const [roomInvitations, setRoomInvitations] = useState<P2pRoomInvitation[]>([]);
+  const [roomMembers, setRoomMembers] = useState<P2pRoomMember[]>([]);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [infoBanner, setInfoBanner] = useState<string | null>(null);
 
@@ -465,14 +492,20 @@ export function P2pWorkspacePage() {
       setChannels([]);
       setActiveChannelId(null);
       setMessages([]);
+      setRoomInvitations([]);
+      setRoomMembers([]);
       return;
     }
+    setTicketUri('');
+    setLastTicketMeta(null);
     setLoadingMessages(true);
     void p2pApi.listChannels(activeRoomId).then((chs) => {
       setChannels(chs);
       if (chs[0]) setActiveChannelId(chs[0].id);
       else setLoadingMessages(false);
     }).catch(() => setLoadingMessages(false));
+    void p2pApi.listRoomInvitations(activeRoomId).then(setRoomInvitations).catch(() => setRoomInvitations([]));
+    void p2pApi.listRoomMembers(activeRoomId).then(setRoomMembers).catch(() => setRoomMembers([]));
   }, [activeRoomId, stealthBootstrap?.locked]);
 
   const stealthBootReady = stealthBootstrap !== null;
@@ -990,7 +1023,7 @@ export function P2pWorkspacePage() {
     const canvas = document.createElement('canvas');
     canvas.width = spec.width;
     canvas.height = spec.height;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
     if (!ctx) {
       setErrorBanner('2D Canvas context unavailable for native capture bridge');
       return;
@@ -998,18 +1031,22 @@ export function P2pWorkspacePage() {
 
     let running = true;
     let inFlight = false;
-    const drawFrame = async () => {
+    let timer: number | null = null;
+    let ws: WebSocket | null = null;
+    let receivedWsFrame = false;
+    let reusableImageData: ImageData | null = null;
+
+    const drawHttpFrame = async () => {
       if (!running || inFlight) return;
       inFlight = true;
       try {
         const blob = await p2pApi.getCaptureFrameBlob(source.id, spec.width);
         const bmp = await createImageBitmap(blob);
-        ctx.fillStyle = '#05070c';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        const scale = Math.min(canvas.width / bmp.width, canvas.height / bmp.height);
-        const w = Math.round(bmp.width * scale);
-        const h = Math.round(bmp.height * scale);
-        ctx.drawImage(bmp, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+        if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
+          canvas.width = bmp.width;
+          canvas.height = bmp.height;
+        }
+        ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
         bmp.close();
       } catch {
         // Keep last drawn frame cleanly
@@ -1018,15 +1055,65 @@ export function P2pWorkspacePage() {
       }
     };
 
-    await drawFrame();
-    const intervalMs = Math.max(16, Math.round(1000 / spec.fps));
-    const timer = window.setInterval(() => void drawFrame(), intervalMs);
+    const startHttpFallback = () => {
+      if (!running || timer !== null) return;
+      const intervalMs = Math.max(16, Math.round(1000 / spec.fps));
+      void drawHttpFrame();
+      timer = window.setInterval(() => void drawHttpFrame(), intervalMs);
+    };
+
+    try {
+      ws = p2pApi.openCaptureStreamSocket(source.id, spec.width, spec.fps);
+      ws.onmessage = (evt) => {
+        if (!running || !(evt.data instanceof ArrayBuffer) || evt.data.byteLength <= 8) return;
+        const view = new DataView(evt.data);
+        const w = view.getUint32(0, true);
+        const h = view.getUint32(4, true);
+        const expected = 8 + w * h * 4;
+        if (w < 2 || h < 2 || evt.data.byteLength !== expected) return;
+        receivedWsFrame = true;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+          reusableImageData = null;
+        }
+        const srcBytes = new Uint8ClampedArray(evt.data, 8, w * h * 4);
+        if (!reusableImageData || reusableImageData.width !== w || reusableImageData.height !== h) {
+          reusableImageData = ctx.createImageData(w, h);
+        }
+        reusableImageData.data.set(srcBytes);
+        ctx.putImageData(reusableImageData, 0, 0);
+      };
+      ws.onerror = () => {
+        if (running && !receivedWsFrame) {
+          startHttpFallback();
+        }
+      };
+      ws.onclose = () => {
+        if (running && !receivedWsFrame) {
+          startHttpFallback();
+        }
+      };
+    } catch {
+      startHttpFallback();
+    }
 
     const stream = canvas.captureStream(spec.fps);
     const track = stream.getVideoTracks()[0];
     captureStopRef.current = () => {
       running = false;
-      window.clearInterval(timer);
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+      if (ws) {
+        try {
+          ws.close();
+        } catch {
+          // Ignore already closed socket
+        }
+        ws = null;
+      }
       track?.stop();
     };
     if (track) {
@@ -1111,11 +1198,45 @@ export function P2pWorkspacePage() {
     setActiveChannelId(created.channel.id);
   };
 
+  const refreshRoomMetadata = useCallback(async (roomId: string) => {
+    const [invs, members] = await Promise.all([
+      p2pApi.listRoomInvitations(roomId).catch(() => []),
+      p2pApi.listRoomMembers(roomId).catch(() => []),
+    ]);
+    setRoomInvitations(invs);
+    setRoomMembers(members);
+  }, []);
+
   const handleGenerateTicket = async () => {
     if (!activeRoomId) return;
     setErrorBanner(null);
-    const res = await p2pApi.exportTicket(activeRoomId, advertisedAddr.trim() || undefined);
+    const res = await p2pApi.exportTicket(activeRoomId, advertisedAddr.trim() || undefined, {
+      ttlSeconds: inviteTtlSec,
+      maxUses: inviteMaxUses,
+    });
     setTicketUri(res.uri);
+    setLastTicketMeta({
+      inviteId: res.inviteId,
+      expiresAtMs: res.expiresAtMs,
+      maxUses: res.maxUses,
+    });
+    await refreshRoomMetadata(activeRoomId);
+  };
+
+  const handleRevokeInvitation = async (inviteId: string) => {
+    if (!activeRoomId) return;
+    setErrorBanner(null);
+    try {
+      await p2pApi.revokeRoomInvitation(activeRoomId, inviteId);
+      if (lastTicketMeta?.inviteId === inviteId) {
+        setTicketUri('');
+        setLastTicketMeta(null);
+      }
+      await refreshRoomMetadata(activeRoomId);
+      setInfoBanner('Invitation revoked immediately.');
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'Failed to revoke invitation');
+    }
   };
 
   const handlePair = async (e: React.FormEvent) => {
@@ -1399,10 +1520,10 @@ export function P2pWorkspacePage() {
       const outcome = lockScreenUseRecovery
         ? await p2pApi.recoverStealth(lockScreenRecovery)
         : await p2pApi.unlockStealth(
-            lockScreenMethod,
-            lockScreenSecret,
-            lockScreenNeedSecond ? lockScreenSecondFactor : undefined,
-          );
+          lockScreenMethod,
+          lockScreenSecret,
+          lockScreenNeedSecond ? lockScreenSecondFactor : undefined,
+        );
       if (outcome.needsAdditionalFactor) {
         setLockScreenNeedSecond(true);
         setLockScreenMsg(outcome.message);
@@ -1490,18 +1611,26 @@ export function P2pWorkspacePage() {
     return (
       <>
         {callState !== 'idle' && <audio ref={remoteKeepAliveAudioRef} autoPlay className="hidden" />}
-        <PdfReaderShell
-          bootstrap={stealthBootstrap}
-          onUnlockOutcome={(outcome) => void handleStealthUnlockOutcome(outcome)}
-          onReturnToMessenger={
-            !stealthBootstrap.locked
-              ? () => void p2pApi.returnToMessengerIfUnlocked().then(applyStealthBootstrap).catch(() => undefined)
-              : undefined
+        <Suspense
+          fallback={
+            <div className="min-h-screen bg-[#f4f3ef] text-[#3a3c3a] flex items-center justify-center text-xs">
+              Opening Document Reader...
+            </div>
           }
-          onEmergencyLock={() =>
-            void p2pApi.triggerStealth('panic_hotkey').then(applyStealthBootstrap).catch(() => undefined)
-          }
-        />
+        >
+          <PdfReaderShell
+            bootstrap={stealthBootstrap}
+            onUnlockOutcome={(outcome) => void handleStealthUnlockOutcome(outcome)}
+            onReturnToMessenger={
+              !stealthBootstrap.locked
+                ? () => void p2pApi.returnToMessengerIfUnlocked().then(applyStealthBootstrap).catch(() => undefined)
+                : undefined
+            }
+            onEmergencyLock={() =>
+              void p2pApi.triggerStealth('panic_hotkey').then(applyStealthBootstrap).catch(() => undefined)
+            }
+          />
+        </Suspense>
       </>
     );
   }
@@ -1547,11 +1676,10 @@ export function P2pWorkspacePage() {
                         key={m}
                         type="button"
                         onClick={() => setLockScreenMethod(m)}
-                        className={`px-3 py-1 rounded-full text-[11px] font-medium cursor-pointer border cloak-transition ${
-                          lockScreenMethod === m
+                        className={`px-3 py-1 rounded-full text-[11px] font-medium cursor-pointer border cloak-transition ${lockScreenMethod === m
                             ? 'border-transparent bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)]'
                             : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]'
-                        }`}
+                          }`}
                       >
                         {m === 'passphrase' ? 'Passphrase' : m === 'pin' ? 'PIN' : 'Command'}
                       </button>
@@ -1618,6 +1746,7 @@ export function P2pWorkspacePage() {
     : null;
   const effectiveMode = ghostState?.effectiveMode ?? ghostPolicy.mode;
   const hideRoomTitle = isMasked && ghostPolicy.hideSensitiveNames;
+  const activePeersCount = status?.activePeerIds.length ?? 0;
 
   return (
     <div className="h-screen flex bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] overflow-hidden relative">
@@ -1632,9 +1761,8 @@ export function P2pWorkspacePage() {
       {/* Left Sidebar: Editorial Vault Plate + Connectivity + Rooms + Direct Pairing + Peers */}
       <aside
         aria-label="Vault navigation and peer directory"
-        className={`${
-          sidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex shadow-2xl' : 'hidden lg:flex'
-        } w-[308px] max-w-[88vw] shrink-0 bg-[var(--cloak-bg-sidebar)] border-r border-[var(--cloak-border)] flex-col overflow-y-auto p-3.5 gap-3.5`}
+        className={`${sidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex shadow-2xl' : 'hidden lg:flex'
+          } w-[308px] max-w-[88vw] shrink-0 bg-[var(--cloak-bg-sidebar)] border-r border-[var(--cloak-border)] flex-col overflow-y-auto p-3.5 gap-3.5`}
       >
         {/* Editorial Node Identity Card */}
         <div className="shrink-0 rounded-2xl overflow-hidden border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-card-shadow)]">
@@ -1644,11 +1772,20 @@ export function P2pWorkspacePage() {
                 Local SQLite Vault
               </span>
               <div className="flex items-center gap-1.5">
-                {diagnostics?.vaultDpapiProtected && (
-                  <span className="px-2 py-0.5 rounded-full border border-[#F2F1ED]/30 bg-[#0E1A18]/25 text-[#F2F1ED] text-[10px] font-mono-tabular font-medium">
-                    DPAPI
-                  </span>
-                )}
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#F2F1ED]/30 bg-[#0E1A18]/25 text-[#F2F1ED] text-[10px] font-medium"
+                  title={
+                    activePeersCount > 0
+                      ? `${activePeersCount} direct peer link(s) active`
+                      : 'Encrypted vault ready (no active peer links)'
+                  }
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${activePeersCount > 0 ? 'bg-emerald-300' : 'bg-[#E3E7E2]/70'
+                      }`}
+                  />
+                  {activePeersCount > 0 ? `${activePeersCount} Linked` : 'Local Ready'}
+                </span>
                 <button
                   type="button"
                   aria-label="Close sidebar"
@@ -1664,55 +1801,79 @@ export function P2pWorkspacePage() {
             </div>
           </div>
 
-          <div className="px-4 py-2.5 space-y-1.5 text-[11px]">
-            <div className="font-mono-tabular text-[var(--cloak-text-muted)] truncate" title={status?.listenAddr}>
-              Listen: {status?.listenAddr}
-            </div>
-            {diagnostics && (
-              <div className="text-[var(--cloak-text-muted)] leading-snug">
-                LAN IPv4:{' '}
-                <span className="text-[var(--cloak-success-text)] font-mono-tabular font-medium">
-                  {diagnostics.primaryLanIp ?? 'none'}
-                </span>
-                {diagnostics.primaryIpv6 ? ' · IPv6 ready' : ''}
-              </div>
-            )}
-            <div className="flex items-center gap-2.5 pt-1.5 border-t border-[var(--cloak-border)] text-[11px]">
-              <Link to="/archive" className="inline-flex items-center gap-1 text-[var(--cloak-info-text)] hover:underline">
-                <Archive className="w-3 h-3" /> /archive
-              </Link>
-              <span className="text-[var(--cloak-border-strong)]">·</span>
-              <Link to="/" className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]">
-                Server Mode
-              </Link>
-            </div>
+          <div className="px-4 py-2 text-[11px] flex items-center justify-between gap-2">
+            <span className="text-[var(--cloak-text-muted)]">
+              {strictDirectOnly ? 'Strict Direct P2P' : 'Assisted P2P'}
+            </span>
+            <button
+              type="button"
+              aria-expanded={diagnosticsExpanded}
+              onClick={() => setDiagnosticsExpanded((v) => !v)}
+              className="inline-flex items-center gap-1 text-[var(--cloak-accent-text)] font-medium hover:underline cursor-pointer"
+            >
+              <span>Advanced Connection & Vault Diagnostics</span>
+              {diagnosticsExpanded ? (
+                <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+              )}
+            </button>
           </div>
-        </div>
 
-        {/* Connectivity & Firewall Diagnostics */}
-        <div className="shrink-0 rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] p-3.5 space-y-2 text-xs">
-          <label className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)]">
-            <input
-              type="checkbox"
-              checked={strictDirectOnly}
-              onChange={(e) => setStrictDirectOnly(e.target.checked)}
-            />
-            <span>Strict Direct-Only (zero silent relay)</span>
-          </label>
-          {!strictDirectOnly && (
-            <input
-              value={stunUrl}
-              onChange={(e) => setStunUrl(e.target.value)}
-              placeholder="stun:stun.example.org:3478"
-              className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
-            />
-          )}
-          {diagnostics && (
-            <div className="text-[11px] text-[var(--cloak-text-muted)] border-t border-[var(--cloak-border)] pt-2 leading-relaxed">
-              Firewall:{' '}
-              <span className={diagnostics.windowsFirewallRulePresent ? 'text-[var(--cloak-success-text)]' : 'text-[var(--cloak-warn-text)]'}>
-                {diagnostics.firewallNote}
-              </span>
+          {diagnosticsExpanded && (
+            <div className="px-4 pb-3 pt-2 border-t border-[var(--cloak-border)] space-y-2 text-[11px]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono-tabular text-[var(--cloak-text-muted)] truncate" title={status?.listenAddr}>
+                  Listen: {status?.listenAddr}
+                </span>
+                {diagnostics?.vaultDpapiProtected && (
+                  <span className="shrink-0 px-2 py-0.5 rounded-full border border-[var(--cloak-accent-border)] bg-[var(--cloak-bg-sage-soft)] text-[var(--cloak-accent-text)] text-[10px] font-mono-tabular font-medium">
+                    DPAPI
+                  </span>
+                )}
+              </div>
+              {diagnostics && (
+                <div className="text-[var(--cloak-text-muted)] leading-snug">
+                  LAN IPv4:{' '}
+                  <span className="text-[var(--cloak-success-text)] font-mono-tabular font-medium">
+                    {diagnostics.primaryLanIp ?? 'none'}
+                  </span>
+                  {diagnostics.primaryIpv6 ? ' · IPv6 ready' : ''}
+                </div>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)] pt-1">
+                <input
+                  type="checkbox"
+                  checked={strictDirectOnly}
+                  onChange={(e) => setStrictDirectOnly(e.target.checked)}
+                />
+                <span>Strict Direct-Only (zero silent relay)</span>
+              </label>
+              {!strictDirectOnly && (
+                <input
+                  value={stunUrl}
+                  onChange={(e) => setStunUrl(e.target.value)}
+                  placeholder="stun:stun.example.org:3478"
+                  className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+                />
+              )}
+              {diagnostics && (
+                <div className="text-[11px] text-[var(--cloak-text-muted)] border-t border-[var(--cloak-border)] pt-2 leading-relaxed">
+                  Firewall:{' '}
+                  <span className={diagnostics.windowsFirewallRulePresent ? 'text-[var(--cloak-success-text)]' : 'text-[var(--cloak-warn-text)]'}>
+                    {diagnostics.firewallNote}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-2.5 pt-1.5 border-t border-[var(--cloak-border)] text-[11px]">
+                <Link to="/archive" className="inline-flex items-center gap-1 text-[var(--cloak-info-text)] hover:underline">
+                  <Archive className="w-3 h-3" /> /archive
+                </Link>
+                <span className="text-[var(--cloak-border-strong)]">·</span>
+                <Link to="/" className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]">
+                  Server Mode
+                </Link>
+              </div>
             </div>
           )}
         </div>
@@ -1744,11 +1905,10 @@ export function P2pWorkspacePage() {
                     setActiveRoomId(r.id);
                     setSidebarOpen(false);
                   }}
-                  className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer border cloak-transition ${
-                    active
+                  className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer border cloak-transition ${active
                       ? 'bg-[var(--cloak-bg-active)] border-[var(--cloak-accent-border)] border-l-[3px] border-l-[var(--cloak-accent)] text-[var(--cloak-text)] shadow-2xs'
                       : 'bg-[var(--cloak-bg-card)]/70 border-transparent text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-card)] hover:border-[var(--cloak-border)]'
-                  }`}
+                    }`}
                 >
                   <span className={`truncate ${active ? 'font-editorial text-sm text-[var(--cloak-text)]' : 'font-medium'}`}>
                     {hideRoomTitle ? 'Protected Room' : r.name}
@@ -1764,8 +1924,15 @@ export function P2pWorkspacePage() {
 
         {/* Direct Pairing Ticket */}
         <div className="shrink-0 rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] p-3.5 space-y-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
-            Direct Pairing Ticket
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
+              Direct Pairing Ticket
+            </span>
+            {activeRoomId && (
+              <span className="text-[10px] text-[var(--cloak-text-dim)] font-mono-tabular">
+                {roomMembers.filter((m) => !m.revoked).length || 1} authorized
+              </span>
+            )}
           </div>
           {activeRoomId && (
             <>
@@ -1790,6 +1957,29 @@ export function P2pWorkspacePage() {
                 placeholder="Optional LAN/IPv6 host:port"
                 className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1.5 text-[11px] text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
               />
+              <div className="grid grid-cols-2 gap-1.5">
+                <select
+                  aria-label="Invitation expiration"
+                  value={inviteTtlSec}
+                  onChange={(e) => setInviteTtlSec(Number(e.target.value))}
+                  className="rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
+                >
+                  <option value={600}>10 min TTL</option>
+                  <option value={900}>15 min TTL</option>
+                  <option value={3600}>1 hour TTL</option>
+                  <option value={86400}>24 hour TTL</option>
+                </select>
+                <select
+                  aria-label="Invitation max uses"
+                  value={inviteMaxUses}
+                  onChange={(e) => setInviteMaxUses(Number(e.target.value))}
+                  className="rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
+                >
+                  <option value={1}>Single-use (1)</option>
+                  <option value={3}>Up to 3 uses</option>
+                  <option value={10}>Up to 10 uses</option>
+                </select>
+              </div>
               <div className="flex gap-1.5">
                 <Button size="sm" variant="secondary" onClick={() => void handleGenerateTicket()} className="flex-1">
                   <Link2 className="w-3.5 h-3.5" /> Generate Ticket
@@ -1810,13 +2000,55 @@ export function P2pWorkspacePage() {
                 )}
               </div>
               {ticketUri && (
-                <textarea
-                  readOnly
-                  rows={2}
-                  value={ticketUri}
-                  aria-label="Shareable pairing ticket"
-                  className="w-full rounded-xl bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-2 font-mono text-[10px] text-[var(--cloak-accent-text)]"
-                />
+                <div className="space-y-1">
+                  {lastTicketMeta && (
+                    <div className="flex items-center justify-between text-[10px] text-[var(--cloak-text-muted)]">
+                      <span>
+                        {lastTicketMeta.maxUses === 1 ? 'Single-use' : `${lastTicketMeta.maxUses} uses`} · signed
+                      </span>
+                      <span className="font-mono-tabular">
+                        Exp {new Date(lastTicketMeta.expiresAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  )}
+                  <textarea
+                    readOnly
+                    rows={2}
+                    value={ticketUri}
+                    aria-label="Shareable pairing ticket"
+                    className="w-full rounded-xl bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-2 font-mono text-[10px] text-[var(--cloak-accent-text)]"
+                  />
+                </div>
+              )}
+              {roomInvitations.filter((inv) => !inv.revoked).length > 0 && (
+                <div className="pt-1 border-t border-[var(--cloak-border)] space-y-1">
+                  <div className="text-[10px] uppercase tracking-[0.1em] text-[var(--cloak-text-dim)]">
+                    Active Signed Invites
+                  </div>
+                  {roomInvitations
+                    .filter((inv) => !inv.revoked)
+                    .slice(0, 3)
+                    .map((inv) => (
+                      <div
+                        key={inv.inviteId}
+                        className="flex items-center justify-between gap-1.5 text-[10px] rounded-lg bg-[var(--cloak-bg-surface)] px-2 py-1"
+                      >
+                        <span className="font-mono-tabular text-[var(--cloak-text-muted)] truncate">
+                          {inv.usesCount}/{inv.maxUses} used ·{' '}
+                          {inv.expiresAtMs <= Date.now()
+                            ? 'Expired'
+                            : `Exp ${new Date(inv.expiresAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleRevokeInvitation(inv.inviteId)}
+                          className="text-[var(--cloak-danger-text)] hover:underline shrink-0 cursor-pointer"
+                        >
+                          Revoke Invite
+                        </button>
+                      </div>
+                    ))}
+                </div>
               )}
             </>
           )}
@@ -1924,11 +2156,10 @@ export function P2pWorkspacePage() {
               type="button"
               onClick={() => setGhostSettingsOpen(true)}
               data-testid="ghost-status-pill"
-              className={`cloak-transition px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer border ${
-                ghostPolicy.enabled || activeRoomOverride
+              className={`cloak-transition px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer border ${ghostPolicy.enabled || activeRoomOverride
                   ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-bg-sage-soft)] text-[var(--cloak-accent-text)]'
                   : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] text-[var(--cloak-text-muted)] hover:border-[var(--cloak-border-strong)] hover:text-[var(--cloak-text)]'
-              }`}
+                }`}
             >
               <Settings2 className="w-3 h-3" />
               {formatModeBadge(effectiveMode, ghostPolicy.enabled || Boolean(activeRoomOverride))}
@@ -1937,11 +2168,10 @@ export function P2pWorkspacePage() {
               type="button"
               onClick={() => setStealthSettingsOpen(true)}
               data-testid="stealth-settings-btn"
-              className={`cloak-transition px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer border ${
-                stealthBootstrap.stealthEnabled
+              className={`cloak-transition px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer border ${stealthBootstrap.stealthEnabled
                   ? 'border-[var(--cloak-info-border)] bg-[var(--cloak-info-soft)] text-[var(--cloak-info-text)]'
                   : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] text-[var(--cloak-text-muted)] hover:border-[var(--cloak-border-strong)] hover:text-[var(--cloak-text)]'
-              }`}
+                }`}
             >
               <FileText className="w-3 h-3" />
               {stealthBootstrap.stealthEnabled ? 'Stealth: PDF Armed' : 'Stealth & PDF'}
@@ -2173,7 +2403,7 @@ export function P2pWorkspacePage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-center gap-3 pb-2 text-[11px] text-[var(--cloak-text-dim)]">
                     <div className="h-px flex-1 bg-[var(--cloak-border)]" />
                     <span className="font-editorial italic">
@@ -2182,124 +2412,163 @@ export function P2pWorkspacePage() {
                     <div className="h-px flex-1 bg-[var(--cloak-border)]" />
                   </div>
 
-                  {filteredMessages.map((m) => {
+                  {filteredMessages.map((m, idx) => {
+                    const prev = idx > 0 ? filteredMessages[idx - 1] : null;
                     const isOwn = m.senderDeviceId === status?.deviceId;
                     const senderName = isOwn
                       ? (status?.displayName ?? 'You')
                       : (peers.find((p) => p.deviceId === m.senderDeviceId)?.displayName ?? m.senderDeviceId.slice(0, 8));
+                    const withinGroupWindow = prev
+                      ? Math.abs(new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime()) <= 5 * 60 * 1000
+                      : false;
+                    const isGroupedContinuation = Boolean(
+                      prev && prev.senderDeviceId === m.senderDeviceId && withinGroupWindow && !m.replyToMessageId,
+                    );
+                    const actionButtons = (
+                      <div className="flex items-center gap-1 shrink-0 opacity-85 group-hover:opacity-100 focus-within:opacity-100">
+                        <button
+                          type="button"
+                          aria-label="Reply to message"
+                          title="Reply"
+                          onClick={() => {
+                            setEditingMsg(null);
+                            setReplyQuote({
+                              id: m.id,
+                              sender: senderName,
+                              snippet: m.text.slice(0, 96).replace(/\s+/g, ' '),
+                            });
+                          }}
+                          className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
+                        >
+                          <CornerUpLeft className="w-3.5 h-3.5" />
+                        </button>
+                        {isOwn && (
+                          <button
+                            type="button"
+                            aria-label="Edit message"
+                            title="Edit"
+                            onClick={() => {
+                              setReplyQuote(null);
+                              setEditingMsg(m);
+                              setComposerText(m.text);
+                            }}
+                            className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-label="Message options"
+                          title="More actions"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setContextMenu({ msg: m, x: rect.left, y: rect.bottom + 6 });
+                          }}
+                          className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
+                        >
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Delete message for everyone"
+                          title="Delete for everyone"
+                          onClick={() =>
+                            void p2pApi.deleteMessage(m.roomId, m.id, 'everyone').then(() => refreshMessages(m.roomId, m.channelId))
+                          }
+                          className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-danger-text)] hover:bg-[var(--cloak-danger-soft)] cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+
                     return (
                       <article
                         key={m.id}
                         data-message-id={m.id}
+                        data-grouped={isGroupedContinuation ? 'true' : 'false'}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           setContextMenu({ msg: m, x: e.clientX, y: e.clientY });
                         }}
-                        className={`group cloak-msg-enter rounded-2xl border p-3.5 sm:p-4 space-y-2 cloak-transition ${
-                          isOwn
+                        className={`group cloak-msg-enter rounded-2xl border cloak-transition ${isGroupedContinuation ? 'px-3.5 sm:px-4 py-2.5' : 'mt-2.5 p-3.5 sm:p-4 space-y-2'
+                          } ${isOwn
                             ? 'bg-[var(--cloak-bg-sage-soft)]/55 border-[var(--cloak-accent-border)]'
                             : 'bg-[var(--cloak-bg-card)] border-[var(--cloak-border)] hover:border-[var(--cloak-border-strong)]'
-                        }`}
+                          }`}
                       >
-                        <div className="flex items-start justify-between gap-2 text-xs">
-                          <div className="flex flex-wrap items-center gap-2 min-w-0">
-                            <Avatar
-                              size="sm"
-                              name={senderName}
-                              color={isOwn ? '#243C34' : '#5F6F63'}
-                            />
-                            <strong className="text-[var(--cloak-text)] font-semibold">
-                              {senderName}
-                            </strong>
-                            <span className="font-mono-tabular text-[11px] text-[var(--cloak-text-dim)]">
-                              {new Date(m.createdAt).toLocaleTimeString()}
-                            </span>
-                            {m.signatureVerified && (
-                              <span title="Ed25519 signature verified" className="text-[var(--cloak-success-text)] text-[10px] font-medium">
-                                ✓ Signed
+                        {!isGroupedContinuation ? (
+                          <div className="flex items-start justify-between gap-2 text-xs">
+                            <div className="flex flex-wrap items-center gap-2 min-w-0">
+                              <Avatar
+                                size="sm"
+                                name={senderName}
+                                color={isOwn ? '#243C34' : '#5F6F63'}
+                              />
+                              <strong className="text-[var(--cloak-text)] font-semibold">
+                                {senderName}
+                              </strong>
+                              <span className="font-mono-tabular text-[11px] text-[var(--cloak-text-dim)]">
+                                {new Date(m.createdAt).toLocaleTimeString()}
                               </span>
-                            )}
-                            {m.viewedAt ? (
-                              <span className="text-[10px] text-[var(--cloak-text-muted)] inline-flex items-center gap-0.5" title="Viewed in local viewport">
-                                <Eye className="w-3 h-3" /> Viewed
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-[var(--cloak-info-text)] inline-flex items-center gap-0.5" title="Not yet marked viewed">
-                                <EyeOff className="w-3 h-3" /> Unread
-                              </span>
-                            )}
-                            {m.expireOnLeave && (
-                              <span className="text-[10px] text-[var(--cloak-warn-text)]">· On-leave</span>
-                            )}
-                            {m.expireAfterViewSeconds != null && (
-                              <span className="text-[10px] text-[var(--cloak-warn-text)]">· {m.expireAfterViewSeconds}s after view</span>
-                            )}
-                            {m.expiresAt && (
-                              <span className="text-[10px] text-[var(--cloak-warn-text)]">
-                                · Exp {new Date(m.expiresAt).toLocaleTimeString()}
-                              </span>
-                            )}
-                            {m.editedAt && <span className="text-[10px] text-[var(--cloak-text-muted)]">(edited)</span>}
+                              {m.signatureVerified && (
+                                <span title="Ed25519 signature verified" className="text-[var(--cloak-success-text)] text-[10px] font-medium">
+                                  ✓ Signed
+                                </span>
+                              )}
+                              {m.viewedAt ? (
+                                <span className="text-[10px] text-[var(--cloak-text-muted)] inline-flex items-center gap-0.5" title="Viewed in local viewport">
+                                  <Eye className="w-3 h-3" /> Viewed
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-[var(--cloak-info-text)] inline-flex items-center gap-0.5" title="Not yet marked viewed">
+                                  <EyeOff className="w-3 h-3" /> Unread
+                                </span>
+                              )}
+                              {m.expireOnLeave && (
+                                <span className="text-[10px] text-[var(--cloak-warn-text)]">· On-leave</span>
+                              )}
+                              {m.expireAfterViewSeconds != null && (
+                                <span className="text-[10px] text-[var(--cloak-warn-text)]">· {m.expireAfterViewSeconds}s after view</span>
+                              )}
+                              {m.expiresAt && (
+                                <span className="text-[10px] text-[var(--cloak-warn-text)]">
+                                  · Exp {new Date(m.expiresAt).toLocaleTimeString()}
+                                </span>
+                              )}
+                              {m.editedAt && <span className="text-[10px] text-[var(--cloak-text-muted)]">(edited)</span>}
+                            </div>
+                            {actionButtons}
                           </div>
-
-                          <div className="flex items-center gap-1 shrink-0 opacity-85 group-hover:opacity-100 focus-within:opacity-100">
-                            <button
-                              type="button"
-                              aria-label="Reply to message"
-                              title="Reply"
-                              onClick={() => {
-                                setEditingMsg(null);
-                                setReplyQuote({
-                                  id: m.id,
-                                  sender: senderName,
-                                  snippet: m.text.slice(0, 96).replace(/\s+/g, ' '),
-                                });
-                              }}
-                              className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
-                            >
-                              <CornerUpLeft className="w-3.5 h-3.5" />
-                            </button>
-                            {isOwn && (
-                              <button
-                                type="button"
-                                aria-label="Edit message"
-                                title="Edit"
-                                onClick={() => {
-                                  setReplyQuote(null);
-                                  setEditingMsg(m);
-                                  setComposerText(m.text);
-                                }}
-                                className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              aria-label="Message options"
-                              title="More actions"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setContextMenu({ msg: m, x: rect.left, y: rect.bottom + 6 });
-                              }}
-                              className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
-                            >
-                              <MoreHorizontal className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Delete message for everyone"
-                              title="Delete for everyone"
-                              onClick={() =>
-                                void p2pApi.deleteMessage(m.roomId, m.id, 'everyone').then(() => refreshMessages(m.roomId, m.channelId))
-                              }
-                              className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-danger-text)] hover:bg-[var(--cloak-danger-soft)] cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 pl-9 mb-0.5 text-[10px] text-[var(--cloak-text-dim)]">
+                            <div className="flex items-center gap-2 min-w-0 opacity-75 group-hover:opacity-100 transition-opacity">
+                              <span className="font-mono-tabular">{new Date(m.createdAt).toLocaleTimeString()}</span>
+                              {m.viewedAt ? (
+                                <span className="inline-flex items-center gap-0.5 text-[var(--cloak-text-muted)]">
+                                  <Eye className="w-2.5 h-2.5" /> Viewed
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 text-[var(--cloak-info-text)]">
+                                  <EyeOff className="w-2.5 h-2.5" /> Unread
+                                </span>
+                              )}
+                              {m.expireOnLeave && <span className="text-[var(--cloak-warn-text)]">· On-leave</span>}
+                              {m.expireAfterViewSeconds != null && (
+                                <span className="text-[var(--cloak-warn-text)]">· {m.expireAfterViewSeconds}s after view</span>
+                              )}
+                              {m.expiresAt && (
+                                <span className="text-[var(--cloak-warn-text)]">
+                                  · Exp {new Date(m.expiresAt).toLocaleTimeString()}
+                                </span>
+                              )}
+                              {m.editedAt && <span>(edited)</span>}
+                            </div>
+                            {actionButtons}
                           </div>
-                        </div>
+                        )}
 
                         <div className="pl-9 space-y-2">
                           <SafeMarkdown text={m.text} />
@@ -2534,46 +2803,54 @@ export function P2pWorkspacePage() {
         )}
       </main>
 
-      <P2pGhostSettingsModal
-        open={ghostSettingsOpen}
-        onClose={() => setGhostSettingsOpen(false)}
-        policy={ghostPolicy}
-        activeRoomId={activeRoomId}
-        activeRoomName={activeRoom?.name ?? null}
-        roomOverride={activeRoomOverride}
-        onSaved={(nextPolicy, nextOverride) => {
-          setGhostPolicy(nextPolicy);
-          if (activeRoomId) {
-            setGhostOverrides((prev) => {
-              const filtered = prev.filter((o) => o.roomId !== activeRoomId);
-              return nextOverride ? [...filtered, nextOverride] : filtered;
-            });
-          }
-          void refreshState();
-        }}
-      />
+      {ghostSettingsOpen && (
+        <Suspense fallback={null}>
+          <P2pGhostSettingsModal
+            open={ghostSettingsOpen}
+            onClose={() => setGhostSettingsOpen(false)}
+            policy={ghostPolicy}
+            activeRoomId={activeRoomId}
+            activeRoomName={activeRoom?.name ?? null}
+            roomOverride={activeRoomOverride}
+            onSaved={(nextPolicy, nextOverride) => {
+              setGhostPolicy(nextPolicy);
+              if (activeRoomId) {
+                setGhostOverrides((prev) => {
+                  const filtered = prev.filter((o) => o.roomId !== activeRoomId);
+                  return nextOverride ? [...filtered, nextOverride] : filtered;
+                });
+              }
+              void refreshState();
+            }}
+          />
+        </Suspense>
+      )}
 
-      <P2pStealthSettingsModal
-        open={stealthSettingsOpen}
-        onClose={() => setStealthSettingsOpen(false)}
-        bootstrap={stealthBootstrap}
-        stealthConfig={stealthConfig}
-        ghostPolicy={ghostPolicy}
-        rooms={rooms}
-        activeRoomId={activeRoomId}
-        overrides={ghostOverrides}
-        pdfDocs={pdfDocs}
-        onSaved={async (nextCfg, nextGhost) => {
-          setStealthConfig(nextCfg);
-          stealthCfgRef.current = nextCfg;
-          setGhostPolicy(nextGhost);
-          await refreshState();
-        }}
-        onLockNow={() => {
-          setStealthSettingsOpen(false);
-          void p2pApi.triggerStealth('manual_lock').then(applyStealthBootstrap).catch(() => undefined);
-        }}
-      />
+      {stealthSettingsOpen && (
+        <Suspense fallback={null}>
+          <P2pStealthSettingsModal
+            open={stealthSettingsOpen}
+            onClose={() => setStealthSettingsOpen(false)}
+            bootstrap={stealthBootstrap}
+            stealthConfig={stealthConfig}
+            ghostPolicy={ghostPolicy}
+            rooms={rooms}
+            activeRoomId={activeRoomId}
+            overrides={ghostOverrides}
+            pdfDocs={pdfDocs}
+            onSaved={async (nextCfg, nextGhost) => {
+              setStealthConfig(nextCfg);
+              stealthCfgRef.current = nextCfg;
+              setGhostPolicy(nextGhost);
+              await refreshState();
+            }}
+            onLockNow={() => {
+              setStealthSettingsOpen(false);
+              void p2pApi.triggerStealth('manual_lock').then(applyStealthBootstrap).catch(() => undefined);
+            }}
+          />
+        </Suspense>
+      )}
 
       <ModalDialog
         open={exportOpen}
