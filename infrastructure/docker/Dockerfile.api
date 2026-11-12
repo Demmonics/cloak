@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1.7
+FROM rust:1.88-bookworm AS builder
+
+WORKDIR /usr/src/cloak
+COPY Cargo.toml Cargo.lock ./
+COPY migrations ./migrations
+COPY services ./services
+
+RUN cargo build --release --bin cloak-api
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN useradd -r -u 10001 -m cloak
+
+COPY --from=builder /usr/src/cloak/target/release/cloak-api /usr/local/bin/cloak-api
+
+USER cloak
+EXPOSE 8080
+ENV API_HOST=0.0.0.0
+ENV API_PORT=8080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=5 \
+  CMD curl -fsS http://127.0.0.1:8080/api/v1/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/cloak-api"]
+

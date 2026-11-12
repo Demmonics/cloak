@@ -1,0 +1,21 @@
+# Dependencies & builds
+node_modules/
+dist/
+build/
+target/
+*.tsbuildinfo
+
+# Local dev / test runtime state
+.cloak-dev/
+.env
+.env.local
+.env.*.local
+playwright-report/
+test-results/
+blob-report/
+
+# Logs & OS files
+*.log
+.DS_Store
+Thumbs.db
+

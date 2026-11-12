@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+FROM rust:1.88-bookworm AS builder
+
+WORKDIR /usr/src/cloak
+COPY Cargo.toml Cargo.lock ./
+COPY migrations ./migrations
+COPY services ./services
+
+RUN cargo build --release --bin cloak-worker
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN useradd -r -u 10001 -m cloak
+
+COPY --from=builder /usr/src/cloak/target/release/cloak-worker /usr/local/bin/cloak-worker
+
+USER cloak
+ENTRYPOINT ["/usr/local/bin/cloak-worker"]
+

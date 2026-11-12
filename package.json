@@ -1,0 +1,32 @@
+{
+  "name": "cloak-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cloak: Privacy-first self-hostable communication workspace",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace=@cloak/web run dev",
+    "build": "npm --workspace=@cloak/protocol run build && npm --workspace=@cloak/crypto run build && npm --workspace=@cloak/archive run build && npm --workspace=@cloak/config run build && npm --workspace=@cloak/ui run build && npm --workspace=@cloak/web run build",
+    "typecheck": "npm --workspace=@cloak/protocol run typecheck && npm --workspace=@cloak/crypto run typecheck && npm --workspace=@cloak/archive run typecheck && npm --workspace=@cloak/config run typecheck && npm --workspace=@cloak/ui run typecheck && npm --workspace=@cloak/web run typecheck",
+    "lint": "eslint apps packages tests",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.24.0",
+    "@playwright/test": "^1.65.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.24.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "jsdom": "^26.1.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}
+
