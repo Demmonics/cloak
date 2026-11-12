@@ -1,12 +1,12 @@
 use axum::{
+    Json,
     extract::{ConnectInfo, State},
     http::HeaderMap,
-    Json,
 };
-use base64::{engine::general_purpose::STANDARD as B64_STD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64_STD};
 use chrono::{Duration, Utc};
 use cloak_core::{
-    auth::{decode_base64_exact, decode_base64_any, issue_session_jwt, verify_ed25519_signature},
+    auth::{decode_base64_any, decode_base64_exact, issue_session_jwt, verify_ed25519_signature},
     error::CloakError,
 };
 use rand::RngCore;
@@ -89,7 +89,8 @@ fn client_ip_key(headers: &HeaderMap, addr: Option<&ConnectInfo<SocketAddr>>) ->
     {
         return fwd.to_string();
     }
-    addr.map(|a| a.0.ip().to_string()).unwrap_or_else(|| "local".into())
+    addr.map(|a| a.0.ip().to_string())
+        .unwrap_or_else(|| "local".into())
 }
 
 fn sanitize_display_name(raw: Option<String>) -> String {
@@ -103,7 +104,10 @@ fn sanitize_display_name(raw: Option<String>) -> String {
 
 fn sanitize_color(raw: Option<String>) -> String {
     let s = raw.unwrap_or_else(|| "#7c6cff".to_string());
-    if s.starts_with('#') && (s.len() == 4 || s.len() == 7) && s[1..].chars().all(|c| c.is_ascii_hexdigit()) {
+    if s.starts_with('#')
+        && (s.len() == 4 || s.len() == 7)
+        && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+    {
         s
     } else {
         "#7c6cff".to_string()
@@ -133,7 +137,10 @@ pub async fn register_device(
 
     let display_name = sanitize_display_name(req.display_name);
     let avatar_color = sanitize_color(req.avatar_color);
-    let avatar_emoji = req.avatar_emoji.map(|e| e.chars().take(8).collect::<String>()).filter(|s| !s.is_empty());
+    let avatar_emoji = req
+        .avatar_emoji
+        .map(|e| e.chars().take(8).collect::<String>())
+        .filter(|s| !s.is_empty());
 
     let row = sqlx::query(
         r#"
@@ -155,7 +162,8 @@ pub async fn register_device(
     .await?
     .ok_or_else(|| CloakError::Conflict("device ID already bound to a different cryptographic key".into()))?;
 
-    let (token, _jti, expires_at) = issue_session_jwt(req.device_id, &state.config.session_jwt_secret, 12)?;
+    let (token, _jti, expires_at) =
+        issue_session_jwt(req.device_id, &state.config.session_jwt_secret, 12)?;
 
     Ok(Json(AuthSessionResponseDto {
         access_token: token,
@@ -172,15 +180,23 @@ pub async fn create_challenge(
     let ip = client_ip_key(&headers, None);
     state
         .state_store
-        .enforce_rate_limit(&format!("auth-challenge:{ip}:{}", req.device_id), 15, 0.25, 120)
+        .enforce_rate_limit(
+            &format!("auth-challenge:{ip}:{}", req.device_id),
+            15,
+            0.25,
+            120,
+        )
         .await?;
 
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM device_identities WHERE id = $1)")
-        .bind(req.device_id)
-        .fetch_one(&state.db)
-        .await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM device_identities WHERE id = $1)")
+            .bind(req.device_id)
+            .fetch_one(&state.db)
+            .await?;
     if !exists {
-        return Err(ApiError(CloakError::NotFound("device identity not registered".into())));
+        return Err(ApiError(CloakError::NotFound(
+            "device identity not registered".into(),
+        )));
     }
 
     let mut nonce = [0u8; 32];
@@ -213,12 +229,19 @@ pub async fn exchange_session(
     let ip = client_ip_key(&headers, None);
     state
         .state_store
-        .enforce_rate_limit(&format!("auth-session:{ip}:{}", req.device_id), 10, 10.0 / 60.0, 120)
+        .enforce_rate_limit(
+            &format!("auth-session:{ip}:{}", req.device_id),
+            10,
+            10.0 / 60.0,
+            120,
+        )
         .await?;
 
     let sig = decode_base64_any(&req.signature_b64, 64, "signatureB64")?;
     if sig.len() != 64 {
-        return Err(ApiError(CloakError::Unauthorized("invalid signature length".into())));
+        return Err(ApiError(CloakError::Unauthorized(
+            "invalid signature length".into(),
+        )));
     }
 
     let mut tx = state.db.begin().await?;
@@ -234,7 +257,9 @@ pub async fn exchange_session(
     .bind(req.device_id)
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or_else(|| CloakError::Unauthorized("challenge missing, expired, or already used".into()))?;
+    .ok_or_else(|| {
+        CloakError::Unauthorized("challenge missing, expired, or already used".into())
+    })?;
 
     let nonce: Vec<u8> = challenge_row.get("nonce");
     let nonce_b64 = B64_STD.encode(&nonce);
@@ -248,12 +273,16 @@ pub async fn exchange_session(
     .ok_or_else(|| CloakError::Unauthorized("unknown device".into()))?;
 
     let ed_pk: Vec<u8> = device_row.get("ed25519_public_key");
-    let canonical = format!("cloak-auth-v1:{}:{}:{}", req.challenge_id, nonce_b64, req.device_id);
+    let canonical = format!(
+        "cloak-auth-v1:{}:{}:{}",
+        req.challenge_id, nonce_b64, req.device_id
+    );
     verify_ed25519_signature(&ed_pk, canonical.as_bytes(), &sig)?;
 
     tx.commit().await?;
 
-    let (token, _jti, expires_at) = issue_session_jwt(req.device_id, &state.config.session_jwt_secret, 12)?;
+    let (token, _jti, expires_at) =
+        issue_session_jwt(req.device_id, &state.config.session_jwt_secret, 12)?;
     Ok(Json(AuthSessionResponseDto {
         access_token: token,
         expires_at: expires_at.to_rfc3339(),
@@ -293,7 +322,10 @@ pub async fn logout(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let now_secs = Utc::now().timestamp() as usize;
     let remaining_ttl = auth.exp.saturating_sub(now_secs).max(60) as u64;
-    state.state_store.revoke_jti(auth.jti, remaining_ttl).await?;
+    state
+        .state_store
+        .revoke_jti(auth.jti, remaining_ttl)
+        .await?;
 
     let exp_dt = chrono::DateTime::from_timestamp(auth.exp as i64, 0)
         .unwrap_or_else(|| Utc::now() + Duration::hours(12));
@@ -323,4 +355,3 @@ fn row_to_device(row: sqlx::postgres::PgRow) -> DeviceProfileDto {
         created_at: created_at.to_rfc3339(),
     }
 }
-

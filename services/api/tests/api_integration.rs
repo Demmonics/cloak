@@ -1,10 +1,10 @@
-use base64::{engine::general_purpose::STANDARD as B64_STD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64_STD};
 use cloak_core::config::{AppConfig, CloakEnv, ObjectStoreBackend, RateLimitConfig};
 use ed25519_dalek::{Signer, SigningKey};
 use futures_util::{SinkExt, StreamExt};
 use rand::rngs::OsRng;
 use reqwest::StatusCode;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMsg};
@@ -43,8 +43,9 @@ async fn spawn_test_server(msg_burst: u32) -> (String, String, PathBuf) {
         .with_env_filter("info,cloak_api=debug")
         .with_test_writer()
         .try_init();
-    let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://cloak:cloak_dev_pass_2026@127.0.0.1:55432/cloak_dev".to_string());
+    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://cloak:cloak_dev_pass_2026@127.0.0.1:55432/cloak_dev".to_string()
+    });
 
     let store_dir = std::env::temp_dir().join(format!("cloak-api-it-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&store_dir).expect("create temp store");
@@ -54,7 +55,8 @@ async fn spawn_test_server(msg_burst: u32) -> (String, String, PathBuf) {
         api_host: "127.0.0.1".into(),
         api_port: 0,
         allowed_origins: vec!["http://127.0.0.1:5173".into()],
-        session_jwt_secret: "test_only_session_jwt_secret_minimum_64_characters_long_1234567890".into(),
+        session_jwt_secret: "test_only_session_jwt_secret_minimum_64_characters_long_1234567890"
+            .into(),
         database_url: db_url,
         database_max_connections: 10,
         redis_url: None,
@@ -86,7 +88,9 @@ async fn spawn_test_server(msg_burst: u32) -> (String, String, PathBuf) {
         },
     };
 
-    let state = cloak_api::build_state(config).await.expect("build test state");
+    let state = cloak_api::build_state(config)
+        .await
+        .expect("build test state");
     let app = cloak_api::build_router(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr: SocketAddr = listener.local_addr().expect("addr");
@@ -103,7 +107,10 @@ async fn spawn_test_server(msg_burst: u32) -> (String, String, PathBuf) {
 
 async fn register(client: &reqwest::Client, api: &str, name: &str) -> TestDevice {
     let mut dev = TestDevice::new(SigningKey::generate(&mut OsRng));
-    let canonical = format!("cloak-register-v1:{}:{}:{}", dev.id, dev.ed_pk_b64, dev.x_pk_b64);
+    let canonical = format!(
+        "cloak-register-v1:{}:{}:{}",
+        dev.id, dev.ed_pk_b64, dev.x_pk_b64
+    );
     let sig_b64 = dev.sign_str(&canonical);
     let resp = client
         .post(format!("{api}/devices/register"))
@@ -130,9 +137,16 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
     let client = reqwest::Client::new();
 
     // 1. Health & security headers
-    let h = client.get(format!("{api}/health")).send().await.expect("health");
+    let h = client
+        .get(format!("{api}/health"))
+        .send()
+        .await
+        .expect("health");
     assert_eq!(h.status(), StatusCode::OK);
-    assert_eq!(h.headers().get("x-content-type-options").unwrap(), "nosniff");
+    assert_eq!(
+        h.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
     assert_eq!(h.headers().get("x-frame-options").unwrap(), "DENY");
 
     // 2. Origin CSRF enforcement rejects unauthorized origin
@@ -255,7 +269,10 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
         let body = inv_resp.text().await.unwrap_or_default();
         panic!("invite failed {status}: {body}");
     }
-    let inv_id = inv_resp.json::<Value>().await.unwrap()["id"].as_str().unwrap().to_string();
+    let inv_id = inv_resp.json::<Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Approval-gated invite hides wrappedRoomKeyBlobB64 on inspect
     let approval_token = format!("tok-app-{}", Uuid::new_v4());
@@ -331,7 +348,11 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
     // 7. WebSocket connect + auth + subscribe
     let (mut ws_stream, _) = connect_async(&ws_url).await.expect("connect ws");
     ws_stream
-        .send(WsMsg::Text(json!({ "type": "auth", "accessToken": member.token }).to_string().into()))
+        .send(WsMsg::Text(
+            json!({ "type": "auth", "accessToken": member.token })
+                .to_string()
+                .into(),
+        ))
         .await
         .unwrap();
     let authed_frame = tokio::time::timeout(Duration::from_secs(3), ws_stream.next())
@@ -339,9 +360,18 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
         .unwrap()
         .unwrap()
         .unwrap();
-    assert!(authed_frame.to_text().unwrap().contains("\"authenticated\""));
+    assert!(
+        authed_frame
+            .to_text()
+            .unwrap()
+            .contains("\"authenticated\"")
+    );
     ws_stream
-        .send(WsMsg::Text(json!({ "type": "subscribe", "roomIds": [room_id] }).to_string().into()))
+        .send(WsMsg::Text(
+            json!({ "type": "subscribe", "roomIds": [room_id] })
+                .to_string()
+                .into(),
+        ))
         .await
         .unwrap();
     // Wait until subscription is registered (presence frame emitted on subscribe)
@@ -357,7 +387,9 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
     let idem_key = Uuid::new_v4();
     let msg_ct = B64_STD.encode(b"opaque-xchacha20-ciphertext-payload");
     let send1 = client
-        .post(format!("{api}/rooms/{room_id}/channels/{text_channel_id}/messages"))
+        .post(format!(
+            "{api}/rooms/{room_id}/channels/{text_channel_id}/messages"
+        ))
         .bearer_auth(&owner.token)
         .json(&json!({
             "messageId": msg_id,
@@ -372,7 +404,9 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
     let m1: Value = send1.json().await.unwrap();
 
     let send_dup = client
-        .post(format!("{api}/rooms/{room_id}/channels/{text_channel_id}/messages"))
+        .post(format!(
+            "{api}/rooms/{room_id}/channels/{text_channel_id}/messages"
+        ))
         .bearer_auth(&owner.token)
         .json(&json!({
             "messageId": Uuid::new_v4(),
@@ -384,7 +418,10 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
         .await
         .unwrap();
     assert_eq!(send_dup.status(), StatusCode::OK);
-    assert_eq!(send_dup.json::<Value>().await.unwrap()["eventSeq"], m1["eventSeq"]);
+    assert_eq!(
+        send_dup.json::<Value>().await.unwrap()["eventSeq"],
+        m1["eventSeq"]
+    );
 
     let mut received_msg_event = false;
     for _ in 0..5 {
@@ -471,7 +508,9 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
 
     // 10. LiveKit call token issuance
     let call_resp = client
-        .post(format!("{api}/rooms/{room_id}/channels/{voice_channel_id}/call-token"))
+        .post(format!(
+            "{api}/rooms/{room_id}/channels/{voice_channel_id}/call-token"
+        ))
         .bearer_auth(&member.token)
         .send()
         .await
@@ -484,7 +523,9 @@ async fn end_to_end_room_auth_messaging_attachments_calls_and_burn() {
     // 11. Delete for me vs everyone + burn room history
     assert_eq!(
         client
-            .delete(format!("{api}/rooms/{room_id}/messages/{msg_id}?scope=everyone"))
+            .delete(format!(
+                "{api}/rooms/{room_id}/messages/{msg_id}?scope=everyone"
+            ))
             .bearer_auth(&owner.token)
             .send()
             .await

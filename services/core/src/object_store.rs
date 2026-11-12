@@ -50,9 +50,9 @@ impl ObjectStore {
             })),
             ObjectStoreBackend::Local => {
                 let root = PathBuf::from(&cfg.local_object_store_dir);
-                fs::create_dir_all(&root)
-                    .await
-                    .map_err(|e| CloakError::Internal(format!("local object dir init failed: {e}")))?;
+                fs::create_dir_all(&root).await.map_err(|e| {
+                    CloakError::Internal(format!("local object dir init failed: {e}"))
+                })?;
                 Ok(Self::Local(LocalFsObjectStore { root }))
             }
         }
@@ -118,12 +118,12 @@ impl LocalFsObjectStore {
 
     async fn get_object(&self, key: &str) -> Result<Bytes, CloakError> {
         let target = self.resolve(key)?;
-        let bytes = fs::read(&target)
-            .await
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => CloakError::NotFound("encrypted object not found".into()),
-                _ => CloakError::Internal(format!("read object failed: {e}")),
-            })?;
+        let bytes = fs::read(&target).await.map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                CloakError::NotFound("encrypted object not found".into())
+            }
+            _ => CloakError::Internal(format!("read object failed: {e}")),
+        })?;
         Ok(Bytes::from(bytes))
     }
 
@@ -148,13 +148,23 @@ impl S3ObjectStore {
             .endpoint
             .strip_prefix("https://")
             .or_else(|| self.endpoint.strip_prefix("http://"))
-            .ok_or_else(|| CloakError::Internal("S3_ENDPOINT must use http:// or https://".into()))?;
-        let scheme = if self.endpoint.starts_with("https://") { "https" } else { "http" };
+            .ok_or_else(|| {
+                CloakError::Internal("S3_ENDPOINT must use http:// or https://".into())
+            })?;
+        let scheme = if self.endpoint.starts_with("https://") {
+            "https"
+        } else {
+            "http"
+        };
         let base_host = without_scheme.split('/').next().unwrap_or(without_scheme);
 
         if self.force_path_style {
             let path = format!("/{}/{}", self.bucket, encoded_key);
-            Ok((format!("{scheme}://{base_host}{path}"), base_host.to_string(), path))
+            Ok((
+                format!("{scheme}://{base_host}{path}"),
+                base_host.to_string(),
+                path,
+            ))
         } else {
             let host = format!("{}.{base_host}", self.bucket);
             let path = format!("/{encoded_key}");
@@ -174,9 +184,8 @@ impl S3ObjectStore {
         let date_stamp = now.format("%Y%m%d").to_string();
         let payload_hash = hex::encode(Sha256::digest(payload));
 
-        let canonical_headers = format!(
-            "host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n"
-        );
+        let canonical_headers =
+            format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
         let signed_headers = "host;x-amz-content-sha256;x-amz-date";
         let canonical_request = format!(
             "{method}\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
@@ -187,7 +196,10 @@ impl S3ObjectStore {
             hex::encode(Sha256::digest(canonical_request.as_bytes()))
         );
 
-        let k_date = hmac_sha256(format!("AWS4{}", self.secret_key).as_bytes(), date_stamp.as_bytes())?;
+        let k_date = hmac_sha256(
+            format!("AWS4{}", self.secret_key).as_bytes(),
+            date_stamp.as_bytes(),
+        )?;
         let k_region = hmac_sha256(&k_date, self.region.as_bytes())?;
         let k_service = hmac_sha256(&k_region, b"s3")?;
         let k_signing = hmac_sha256(&k_service, b"aws4_request")?;
@@ -279,9 +291,8 @@ impl S3ObjectStore {
 }
 
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>, CloakError> {
-    let mut mac =
-        HmacSha256::new_from_slice(key).map_err(|e| CloakError::Internal(format!("hmac error: {e}")))?;
+    let mut mac = HmacSha256::new_from_slice(key)
+        .map_err(|e| CloakError::Internal(format!("hmac error: {e}")))?;
     mac.update(data);
     Ok(mac.finalize().into_bytes().to_vec())
 }
-

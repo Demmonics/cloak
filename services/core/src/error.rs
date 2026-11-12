@@ -21,4 +21,3 @@ pub enum CloakError {
     #[error("internal error: {0}")]
     Internal(String),
 }
-

@@ -4,7 +4,7 @@ use cloak_core::{
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -44,4 +44,3 @@ impl WsHub {
         }
     }
 }
-

@@ -138,28 +138,40 @@ pub async fn require_channel_access(
     .fetch_optional(db)
     .await?;
 
-    let is_priv = member.device_id == member.owner_device_id || member.role_name == "owner" || member.role_name == "admin";
+    let is_priv = member.device_id == member.owner_device_id
+        || member.role_name == "owner"
+        || member.role_name == "admin";
 
     if let Some(ov) = override_row {
         if !is_priv && !ov.get::<bool, _>("can_view") {
             return Err(CloakError::Forbidden("no access to view channel".into()));
         }
         if require_send && !is_priv && !ov.get::<bool, _>("can_send") {
-            return Err(CloakError::Forbidden("no permission to send in this channel".into()));
+            return Err(CloakError::Forbidden(
+                "no permission to send in this channel".into(),
+            ));
         }
         if require_voice && !is_priv && !ov.get::<bool, _>("can_connect_voice") {
-            return Err(CloakError::Forbidden("no permission to connect voice in this channel".into()));
+            return Err(CloakError::Forbidden(
+                "no permission to connect voice in this channel".into(),
+            ));
         }
     } else if is_private && !is_priv {
-        return Err(CloakError::Forbidden("channel is restricted to authorized roles".into()));
+        return Err(CloakError::Forbidden(
+            "channel is restricted to authorized roles".into(),
+        ));
     }
 
     if require_send {
         if channel_type == "voice" {
-            return Err(CloakError::BadRequest("cannot send text messages to a voice-only channel".into()));
+            return Err(CloakError::BadRequest(
+                "cannot send text messages to a voice-only channel".into(),
+            ));
         }
         if channel_type == "announcement" && !is_priv {
-            return Err(CloakError::Forbidden("announcement channel is read-only for members".into()));
+            return Err(CloakError::Forbidden(
+                "announcement channel is read-only for members".into(),
+            ));
         }
         if !has_permission(db, &member, "send_messages").await? {
             return Err(CloakError::Forbidden("role is read-only".into()));
@@ -168,7 +180,9 @@ pub async fn require_channel_access(
 
     if require_voice {
         if channel_type != "voice" {
-            return Err(CloakError::BadRequest("channel is not a voice channel".into()));
+            return Err(CloakError::BadRequest(
+                "channel is not a voice channel".into(),
+            ));
         }
         if !has_permission(db, &member, "connect_voice").await? {
             return Err(CloakError::Forbidden("role cannot connect to voice".into()));
@@ -184,4 +198,3 @@ pub async fn require_channel_access(
         member,
     })
 }
-

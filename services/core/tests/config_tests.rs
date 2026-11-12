@@ -1,4 +1,6 @@
-use cloak_core::auth::{hash_invite_password, issue_session_jwt, verify_invite_password, verify_session_jwt};
+use cloak_core::auth::{
+    hash_invite_password, issue_session_jwt, verify_invite_password, verify_session_jwt,
+};
 use cloak_core::config::AppConfig;
 use std::sync::Mutex;
 use uuid::Uuid;
@@ -10,7 +12,10 @@ fn production_config_fails_closed_without_real_infra() {
     let _g = ENV_LOCK.lock().unwrap();
     unsafe {
         std::env::set_var("CLOAK_ENV", "production");
-        std::env::set_var("DATABASE_URL", "postgres://cloak:cloak@127.0.0.1:5432/cloak");
+        std::env::set_var(
+            "DATABASE_URL",
+            "postgres://cloak:cloak@127.0.0.1:5432/cloak",
+        );
         std::env::set_var("CLOAK_DEV_ALLOW_IN_MEMORY_REDIS", "true");
         std::env::remove_var("REDIS_URL");
     }
@@ -49,4 +54,3 @@ fn jwt_and_argon2_invite_password_roundtrip() {
     assert!(verify_invite_password("horse-battery-99", &hash).expect("verify"));
     assert!(!verify_invite_password("wrong-password", &hash).expect("verify"));
 }
-

@@ -1,9 +1,12 @@
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 
 use crate::error::CloakError;
 
-pub async fn connect_and_migrate(database_url: &str, max_connections: u32) -> Result<PgPool, CloakError> {
+pub async fn connect_and_migrate(
+    database_url: &str,
+    max_connections: u32,
+) -> Result<PgPool, CloakError> {
     let pool = PgPoolOptions::new()
         .max_connections(max_connections)
         .connect(database_url)
@@ -16,4 +19,3 @@ pub async fn connect_and_migrate(database_url: &str, max_connections: u32) -> Re
 
     Ok(pool)
 }
-

@@ -84,8 +84,9 @@ impl AppConfig {
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>();
 
-        let session_jwt_secret = env::var("SESSION_JWT_SECRET")
-            .unwrap_or_else(|_| "dev-only-insecure-session-secret-change-in-production-min-32-bytes".to_string());
+        let session_jwt_secret = env::var("SESSION_JWT_SECRET").unwrap_or_else(|_| {
+            "dev-only-insecure-session-secret-change-in-production-min-32-bytes".to_string()
+        });
         if session_jwt_secret.len() < 32 {
             return Err(ConfigError::Invalid(
                 "SESSION_JWT_SECRET",
@@ -93,8 +94,8 @@ impl AppConfig {
             ));
         }
 
-        let database_url = env::var("DATABASE_URL")
-            .map_err(|_| ConfigError::Missing("DATABASE_URL"))?;
+        let database_url =
+            env::var("DATABASE_URL").map_err(|_| ConfigError::Missing("DATABASE_URL"))?;
         let database_max_connections = parse_u32("DATABASE_MAX_CONNECTIONS", 20)?;
 
         let redis_url = env::var("REDIS_URL").ok().filter(|s| !s.trim().is_empty());
@@ -106,25 +107,36 @@ impl AppConfig {
         let object_store_backend = match backend_str.to_lowercase().as_str() {
             "s3" => ObjectStoreBackend::S3,
             "local" => ObjectStoreBackend::Local,
-            other => return Err(ConfigError::Invalid("OBJECT_STORE_BACKEND", other.to_string())),
+            other => {
+                return Err(ConfigError::Invalid(
+                    "OBJECT_STORE_BACKEND",
+                    other.to_string(),
+                ));
+            }
         };
 
-        let s3_endpoint = env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:9000".to_string());
+        let s3_endpoint =
+            env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:9000".to_string());
         let s3_region = env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
         let s3_bucket = env::var("S3_BUCKET").unwrap_or_else(|_| "cloak-attachments".to_string());
-        let s3_access_key_id = env::var("S3_ACCESS_KEY_ID").unwrap_or_else(|_| "minioadmin".to_string());
-        let s3_secret_access_key = env::var("S3_SECRET_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".to_string());
+        let s3_access_key_id =
+            env::var("S3_ACCESS_KEY_ID").unwrap_or_else(|_| "minioadmin".to_string());
+        let s3_secret_access_key =
+            env::var("S3_SECRET_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".to_string());
         let s3_force_path_style = env::var("S3_FORCE_PATH_STYLE")
             .map(|v| v != "false" && v != "0")
             .unwrap_or(true);
-        let local_object_store_dir = env::var("LOCAL_OBJECT_STORE_DIR")
-            .unwrap_or_else(|_| ".cloak-dev/objects".to_string());
+        let local_object_store_dir =
+            env::var("LOCAL_OBJECT_STORE_DIR").unwrap_or_else(|_| ".cloak-dev/objects".to_string());
 
-        let livekit_url = env::var("LIVEKIT_URL").unwrap_or_else(|_| "ws://127.0.0.1:7880".to_string());
-        let livekit_http_url = env::var("LIVEKIT_HTTP_URL").unwrap_or_else(|_| "http://127.0.0.1:7880".to_string());
+        let livekit_url =
+            env::var("LIVEKIT_URL").unwrap_or_else(|_| "ws://127.0.0.1:7880".to_string());
+        let livekit_http_url =
+            env::var("LIVEKIT_HTTP_URL").unwrap_or_else(|_| "http://127.0.0.1:7880".to_string());
         let livekit_api_key = env::var("LIVEKIT_API_KEY").unwrap_or_else(|_| "devkey".to_string());
-        let livekit_api_secret = env::var("LIVEKIT_API_SECRET")
-            .unwrap_or_else(|_| "devsecret_must_be_at_least_32_characters_long_for_livekit".to_string());
+        let livekit_api_secret = env::var("LIVEKIT_API_SECRET").unwrap_or_else(|_| {
+            "devsecret_must_be_at_least_32_characters_long_for_livekit".to_string()
+        });
 
         let max_attachment_bytes = parse_i64("MAX_ATTACHMENT_BYTES", 25 * 1024 * 1024)?;
         let room_quota_bytes = parse_i64("ROOM_QUOTA_BYTES", 512 * 1024 * 1024)?;
@@ -168,7 +180,9 @@ impl AppConfig {
                 ));
             }
         } else if redis_url.is_none() && !allow_in_memory_redis {
-            return Err(ConfigError::Missing("REDIS_URL (or set CLOAK_DEV_ALLOW_IN_MEMORY_REDIS=true for single-node local dev)"));
+            return Err(ConfigError::Missing(
+                "REDIS_URL (or set CLOAK_DEV_ALLOW_IN_MEMORY_REDIS=true for single-node local dev)",
+            ));
         }
 
         Ok(Self {
@@ -231,8 +245,9 @@ fn parse_i64(key: &'static str, default: i64) -> Result<i64, ConfigError> {
 
 fn parse_usize(key: &'static str, default: usize) -> Result<usize, ConfigError> {
     match env::var(key) {
-        Ok(v) if !v.trim().is_empty() => v.parse::<usize>().map_err(|_| ConfigError::Invalid(key, v)),
+        Ok(v) if !v.trim().is_empty() => {
+            v.parse::<usize>().map_err(|_| ConfigError::Invalid(key, v))
+        }
         _ => Ok(default),
     }
 }
-

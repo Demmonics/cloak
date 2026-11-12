@@ -1,11 +1,11 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
-use base64::{engine::general_purpose::STANDARD as B64_STD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64_STD};
 use chrono::{Duration, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -20,7 +20,11 @@ pub struct SessionClaims {
     pub exp: usize,
 }
 
-pub fn decode_base64_exact(b64: &str, expected_len: usize, label: &str) -> Result<Vec<u8>, CloakError> {
+pub fn decode_base64_exact(
+    b64: &str,
+    expected_len: usize,
+    label: &str,
+) -> Result<Vec<u8>, CloakError> {
     let bytes = B64_STD
         .decode(b64)
         .map_err(|_| CloakError::BadRequest(format!("invalid base64 for {label}")))?;
@@ -131,4 +135,3 @@ pub fn verify_invite_password(password: &str, encoded_hash: &str) -> Result<bool
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())
 }
-

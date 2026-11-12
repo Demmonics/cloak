@@ -1,9 +1,9 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{header, HeaderMap},
+    http::{HeaderMap, header},
     response::Response,
 };
 use cloak_core::error::CloakError;
@@ -14,9 +14,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
-    authz::require_active_member,
-    error::ApiError,
-    extractors::verify_token_against_state,
+    authz::require_active_member, error::ApiError, extractors::verify_token_against_state,
     state::AppState,
 };
 
@@ -24,17 +22,25 @@ use crate::{
 #[serde(tag = "type", rename_all = "camelCase")]
 enum WsInbound {
     #[serde(rename_all = "camelCase")]
-    Auth { access_token: String },
+    Auth {
+        access_token: String,
+    },
     #[serde(rename_all = "camelCase")]
-    Subscribe { room_ids: Vec<Uuid> },
-    Ping { ts: i64 },
+    Subscribe {
+        room_ids: Vec<Uuid>,
+    },
+    Ping {
+        ts: i64,
+    },
     #[serde(rename_all = "camelCase")]
     Typing {
         room_id: Uuid,
         channel_id: Uuid,
         is_typing: bool,
     },
-    Presence { status: String },
+    Presence {
+        status: String,
+    },
 }
 
 pub async fn ws_handler(
@@ -42,12 +48,13 @@ pub async fn ws_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
-        if !state.config.allowed_origins.is_empty()
-            && !state.config.allowed_origins.iter().any(|o| o == origin)
-        {
-            return Err(ApiError(CloakError::Forbidden("WebSocket origin not allowed".into())));
-        }
+    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())
+        && !state.config.allowed_origins.is_empty()
+        && !state.config.allowed_origins.iter().any(|o| o == origin)
+    {
+        return Err(ApiError(CloakError::Forbidden(
+            "WebSocket origin not allowed".into(),
+        )));
     }
 
     let max_frame = state.config.rate_limits.ws_max_payload_bytes;
@@ -245,15 +252,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     if let Some(dev_id) = authenticated_device {
         for rid in subscribed_rooms {
-            state.ws_hub.broadcast_room(
-                rid,
-                serde_json::json!({
-                    "type": "presence",
-                    "roomId": rid,
-                    "deviceId": dev_id,
-                    "status": "offline"
-                }).to_string(),
-            ).await;
+            state
+                .ws_hub
+                .broadcast_room(
+                    rid,
+                    serde_json::json!({
+                        "type": "presence",
+                        "roomId": rid,
+                        "deviceId": dev_id,
+                        "status": "offline"
+                    })
+                    .to_string(),
+                )
+                .await;
         }
     }
 
@@ -262,4 +273,3 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
     writer_task.abort();
 }
-

@@ -1,8 +1,8 @@
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
-use base64::{engine::general_purpose::STANDARD as B64_STD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64_STD};
 use chrono::{DateTime, Utc};
 use cloak_core::{
     auth::{decode_base64_any, decode_base64_exact},
@@ -146,7 +146,10 @@ pub struct RoomDetailDto {
     pub my_epoch_envelopes: Vec<EpochKeyEnvelopeDto>,
 }
 
-async fn seed_system_roles(tx: &mut Transaction<'_, Postgres>, room_id: Uuid) -> Result<Uuid, CloakError> {
+async fn seed_system_roles(
+    tx: &mut Transaction<'_, Postgres>,
+    room_id: Uuid,
+) -> Result<Uuid, CloakError> {
     let roles_spec: [(&str, i32, &[&str]); 4] = [
         (
             "owner",
@@ -180,7 +183,12 @@ async fn seed_system_roles(tx: &mut Transaction<'_, Postgres>, room_id: Uuid) ->
         (
             "member",
             40,
-            &["send_messages", "attach_files", "connect_voice", "export_chat"],
+            &[
+                "send_messages",
+                "attach_files",
+                "connect_voice",
+                "export_chat",
+            ],
         ),
         ("readonly", 10, &["export_chat"]),
     ];
@@ -243,12 +251,25 @@ pub async fn create_room(
         return Err(ApiError(CloakError::BadRequest("invalid roomKind".into())));
     }
 
-    let wrapped_key = decode_base64_any(&req.owner_wrapped_epoch_key_b64, 512, "ownerWrappedEpochKeyB64")?;
-    let sender_x_pk = decode_base64_exact(&req.owner_x25519_public_key_b64, 32, "ownerX25519PublicKeyB64")?;
+    let wrapped_key = decode_base64_any(
+        &req.owner_wrapped_epoch_key_b64,
+        512,
+        "ownerWrappedEpochKeyB64",
+    )?;
+    let sender_x_pk = decode_base64_exact(
+        &req.owner_x25519_public_key_b64,
+        32,
+        "ownerX25519PublicKeyB64",
+    )?;
 
     let mut tx = state.db.begin().await?;
     let room_id = req.room_id.unwrap_or_else(Uuid::new_v4);
-    let description = req.description.unwrap_or_default().chars().take(500).collect::<String>();
+    let description = req
+        .description
+        .unwrap_or_default()
+        .chars()
+        .take(500)
+        .collect::<String>();
 
     sqlx::query(
         r#"
@@ -418,11 +439,13 @@ pub async fn update_room(
             .await?;
     }
     if let Some(disappear) = req.default_disappear_seconds {
-        sqlx::query("UPDATE rooms SET default_disappear_seconds = $2, updated_at = NOW() WHERE id = $1")
-            .bind(room_id)
-            .bind(disappear)
-            .execute(&state.db)
-            .await?;
+        sqlx::query(
+            "UPDATE rooms SET default_disappear_seconds = $2, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(room_id)
+        .bind(disappear)
+        .execute(&state.db)
+        .await?;
     }
 
     fetch_room_detail(&state.db, room_id, auth.device_id)
@@ -439,11 +462,15 @@ pub async fn create_channel(
 ) -> Result<Json<ChannelDto>, ApiError> {
     let _ctx = require_permission(&state.db, room_id, auth.device_id, "manage_channels").await?;
     if !matches!(req.channel_type.as_str(), "text" | "voice" | "announcement") {
-        return Err(ApiError(CloakError::BadRequest("invalid channelType".into())));
+        return Err(ApiError(CloakError::BadRequest(
+            "invalid channelType".into(),
+        )));
     }
     let name = req.name.trim().to_lowercase().replace(' ', "-");
     if name.is_empty() || name.len() > 64 {
-        return Err(ApiError(CloakError::BadRequest("invalid channel name".into())));
+        return Err(ApiError(CloakError::BadRequest(
+            "invalid channel name".into(),
+        )));
     }
 
     let next_pos: i32 = sqlx::query_scalar(
@@ -476,7 +503,16 @@ pub async fn create_channel(
     .await?;
 
     let dto = row_to_channel(row);
-    broadcast_room_event(&state, room_id, Some(channel_id), None, auth.device_id, "channel.updated", None).await?;
+    broadcast_room_event(
+        &state,
+        room_id,
+        Some(channel_id),
+        None,
+        auth.device_id,
+        "channel.updated",
+        None,
+    )
+    .await?;
     Ok(Json(dto))
 }
 
@@ -499,7 +535,9 @@ pub async fn update_channel(
     if let Some(name) = req.name {
         let clean = name.trim().to_lowercase().replace(' ', "-");
         if clean.is_empty() || clean.len() > 64 {
-            return Err(ApiError(CloakError::BadRequest("invalid channel name".into())));
+            return Err(ApiError(CloakError::BadRequest(
+                "invalid channel name".into(),
+            )));
         }
         sqlx::query("UPDATE channels SET name = $3 WHERE id = $1 AND room_id = $2")
             .bind(channel_id)
@@ -550,7 +588,16 @@ pub async fn update_channel(
     .await?
     .ok_or_else(|| CloakError::NotFound("channel not found".into()))?;
 
-    broadcast_room_event(&state, room_id, Some(channel_id), None, auth.device_id, "channel.updated", None).await?;
+    broadcast_room_event(
+        &state,
+        room_id,
+        Some(channel_id),
+        None,
+        auth.device_id,
+        "channel.updated",
+        None,
+    )
+    .await?;
     Ok(Json(row_to_channel(row)))
 }
 
@@ -578,7 +625,16 @@ pub async fn delete_channel(
         .execute(&state.db)
         .await?;
 
-    broadcast_room_event(&state, room_id, Some(channel_id), None, auth.device_id, "channel.updated", None).await?;
+    broadcast_room_event(
+        &state,
+        room_id,
+        Some(channel_id),
+        None,
+        auth.device_id,
+        "channel.updated",
+        None,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "archived": true })))
 }
 
@@ -589,7 +645,11 @@ pub async fn rotate_epoch(
     Json(req): Json<RotateEpochRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let _ctx = require_permission(&state.db, room_id, auth.device_id, "manage_members").await?;
-    let sender_x_pk = decode_base64_exact(&req.sender_x25519_public_key_b64, 32, "senderX25519PublicKeyB64")?;
+    let sender_x_pk = decode_base64_exact(
+        &req.sender_x25519_public_key_b64,
+        32,
+        "senderX25519PublicKeyB64",
+    )?;
     let reason = req.reason.unwrap_or_else(|| "manual_rotate".to_string());
 
     let mut tx = state.db.begin().await?;
@@ -611,7 +671,11 @@ pub async fn rotate_epoch(
     .await?;
 
     for env in req.envelopes {
-        let wrapped = decode_base64_any(&env.wrapped_key_ciphertext_b64, 512, "wrappedKeyCiphertextB64")?;
+        let wrapped = decode_base64_any(
+            &env.wrapped_key_ciphertext_b64,
+            512,
+            "wrappedKeyCiphertextB64",
+        )?;
         sqlx::query(
             r#"
             INSERT INTO epoch_key_envelopes (id, room_id, epoch, recipient_device_id, sender_device_id, sender_x25519_public_key, wrapped_key_ciphertext)
@@ -631,7 +695,16 @@ pub async fn rotate_epoch(
     }
     tx.commit().await?;
 
-    broadcast_room_event(&state, room_id, None, None, auth.device_id, "epoch.rotated", None).await?;
+    broadcast_room_event(
+        &state,
+        room_id,
+        None,
+        None,
+        auth.device_id,
+        "epoch.rotated",
+        None,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "epoch": new_epoch })))
 }
 
@@ -647,16 +720,19 @@ pub async fn burn_room_history(
             "only the room owner may burn conversation history".into(),
         )));
     }
-    let sender_x_pk = decode_base64_exact(&req.sender_x25519_public_key_b64, 32, "senderX25519PublicKeyB64")?;
+    let sender_x_pk = decode_base64_exact(
+        &req.sender_x25519_public_key_b64,
+        32,
+        "senderX25519PublicKeyB64",
+    )?;
 
     let mut tx = state.db.begin().await?;
 
-    let attachment_rows = sqlx::query(
-        "SELECT id, object_key FROM encrypted_attachments WHERE room_id = $1",
-    )
-    .bind(room_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    let attachment_rows =
+        sqlx::query("SELECT id, object_key FROM encrypted_attachments WHERE room_id = $1")
+            .bind(room_id)
+            .fetch_all(&mut *tx)
+            .await?;
 
     let chunk_keys: Vec<String> = sqlx::query_scalar(
         "SELECT ac.object_key FROM attachment_chunks ac JOIN encrypted_attachments ea ON ea.id = ac.attachment_id WHERE ea.room_id = $1",
@@ -689,10 +765,12 @@ pub async fn burn_room_history(
         .await?;
     }
 
-    sqlx::query("DELETE FROM channel_pins WHERE channel_id IN (SELECT id FROM channels WHERE room_id = $1)")
-        .bind(room_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "DELETE FROM channel_pins WHERE channel_id IN (SELECT id FROM channels WHERE room_id = $1)",
+    )
+    .bind(room_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("DELETE FROM encrypted_messages WHERE room_id = $1")
         .bind(room_id)
         .execute(&mut *tx)
@@ -742,7 +820,11 @@ pub async fn burn_room_history(
     .await?;
 
     for env in req.envelopes {
-        let wrapped = decode_base64_any(&env.wrapped_key_ciphertext_b64, 512, "wrappedKeyCiphertextB64")?;
+        let wrapped = decode_base64_any(
+            &env.wrapped_key_ciphertext_b64,
+            512,
+            "wrappedKeyCiphertextB64",
+        )?;
         sqlx::query(
             r#"
             INSERT INTO epoch_key_envelopes (id, room_id, epoch, recipient_device_id, sender_device_id, sender_x25519_public_key, wrapped_key_ciphertext)
@@ -795,7 +877,10 @@ pub async fn burn_room_history(
             "createdAt": now.to_rfc3339(),
         }
     });
-    state.ws_hub.broadcast_room(room_id, ws_payload.to_string()).await;
+    state
+        .ws_hub
+        .broadcast_room(room_id, ws_payload.to_string())
+        .await;
 
     Ok(Json(serde_json::json!({
         "burned": true,
@@ -1006,6 +1091,9 @@ pub async fn broadcast_room_event(
             "createdAt": now.to_rfc3339(),
         }
     });
-    state.ws_hub.broadcast_room(room_id, ws_msg.to_string()).await;
+    state
+        .ws_hub
+        .broadcast_room(room_id, ws_msg.to_string())
+        .await;
     Ok(seq)
 }

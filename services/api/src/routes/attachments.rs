@@ -1,11 +1,11 @@
 use axum::{
+    Json,
     body::Bytes,
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::IntoResponse,
-    Json,
 };
-use base64::{engine::general_purpose::STANDARD as B64_STD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64_STD};
 use chrono::{DateTime, Utc};
 use cloak_core::{auth::decode_base64_exact, error::CloakError};
 use serde::{Deserialize, Serialize};
@@ -55,14 +55,22 @@ pub async fn init_attachment(
     Json(req): Json<InitAttachmentRequest>,
 ) -> Result<Json<AttachmentMetadataDto>, ApiError> {
     let _ctx = require_permission(&state.db, room_id, auth.device_id, "attach_files").await?;
-    if req.expected_ciphertext_bytes <= 0 || req.expected_ciphertext_bytes > state.config.max_attachment_bytes {
+    if req.expected_ciphertext_bytes <= 0
+        || req.expected_ciphertext_bytes > state.config.max_attachment_bytes
+    {
         return Err(ApiError(CloakError::PayloadTooLarge(format!(
             "attachment exceeds maximum size of {} bytes",
             state.config.max_attachment_bytes
         ))));
     }
-    if req.total_chunks <= 0 || req.total_chunks > 1024 || req.chunk_size_bytes <= 0 || req.chunk_size_bytes > 4 * 1024 * 1024 {
-        return Err(ApiError(CloakError::BadRequest("invalid chunk parameters".into())));
+    if req.total_chunks <= 0
+        || req.total_chunks > 1024
+        || req.chunk_size_bytes <= 0
+        || req.chunk_size_bytes > 4 * 1024 * 1024
+    {
+        return Err(ApiError(CloakError::BadRequest(
+            "invalid chunk parameters".into(),
+        )));
     }
 
     let quota_row = sqlx::query("SELECT quota_bytes, used_bytes FROM rooms WHERE id = $1")
@@ -72,12 +80,17 @@ pub async fn init_attachment(
     let quota: i64 = quota_row.get("quota_bytes");
     let used: i64 = quota_row.get("used_bytes");
     if used + req.expected_ciphertext_bytes > quota {
-        return Err(ApiError(CloakError::PayloadTooLarge("room storage quota exceeded".into())));
+        return Err(ApiError(CloakError::PayloadTooLarge(
+            "room storage quota exceeded".into(),
+        )));
     }
 
     state
         .state_store
-        .acquire_upload_slot(auth.device_id, state.config.rate_limits.parallel_uploads_per_device)
+        .acquire_upload_slot(
+            auth.device_id,
+            state.config.rate_limits.parallel_uploads_per_device,
+        )
         .await?;
 
     let stream_header = decode_base64_exact(&req.stream_header_b64, 24, "streamHeaderB64")?;
@@ -136,16 +149,24 @@ pub async fn upload_chunk(
     let att_state: String = row.get("state");
     let total_chunks: i32 = row.get("total_chunks");
     if uploader != auth.device_id {
-        return Err(ApiError(CloakError::Forbidden("only uploader may send chunks".into())));
+        return Err(ApiError(CloakError::Forbidden(
+            "only uploader may send chunks".into(),
+        )));
     }
     if att_state != "uploading" {
-        return Err(ApiError(CloakError::Conflict("attachment is not in uploading state".into())));
+        return Err(ApiError(CloakError::Conflict(
+            "attachment is not in uploading state".into(),
+        )));
     }
     if chunk_index < 0 || chunk_index >= total_chunks {
-        return Err(ApiError(CloakError::BadRequest("chunk index out of range".into())));
+        return Err(ApiError(CloakError::BadRequest(
+            "chunk index out of range".into(),
+        )));
     }
     if body.is_empty() || body.len() > 5 * 1024 * 1024 {
-        return Err(ApiError(CloakError::PayloadTooLarge("chunk size out of bounds".into())));
+        return Err(ApiError(CloakError::PayloadTooLarge(
+            "chunk size out of bounds".into(),
+        )));
     }
 
     let chunk_key = format!("rooms/{room_id}/attachments/{attachment_id}/chunk_{chunk_index}.bin");
@@ -169,7 +190,9 @@ pub async fn upload_chunk(
     .execute(&state.db)
     .await?;
 
-    Ok(Json(serde_json::json!({ "chunkIndex": chunk_index, "storedBytes": len })))
+    Ok(Json(
+        serde_json::json!({ "chunkIndex": chunk_index, "storedBytes": len }),
+    ))
 }
 
 pub async fn complete_attachment(
@@ -204,10 +227,12 @@ pub async fn complete_attachment(
     state.state_store.release_upload_slot(auth.device_id).await;
 
     if cnt != total_chunks as i64 {
-        sqlx::query("UPDATE encrypted_attachments SET state = 'failed', updated_at = NOW() WHERE id = $1")
-            .bind(attachment_id)
-            .execute(&state.db)
-            .await?;
+        sqlx::query(
+            "UPDATE encrypted_attachments SET state = 'failed', updated_at = NOW() WHERE id = $1",
+        )
+        .bind(attachment_id)
+        .execute(&state.db)
+        .await?;
         return Err(ApiError(CloakError::BadRequest(format!(
             "missing chunks: got {cnt} of {total_chunks}"
         ))));
@@ -305,8 +330,13 @@ pub async fn download_chunk(
     let att_state: String = row.get("state");
     let deleted_at: Option<DateTime<Utc>> = row.get("deleted_at");
     let expires_at: Option<DateTime<Utc>> = row.get("expires_at");
-    if att_state != "uploaded" || deleted_at.is_some() || expires_at.is_some_and(|e| e <= Utc::now()) {
-        return Err(ApiError(CloakError::NotFound("attachment is expired or deleted".into())));
+    if att_state != "uploaded"
+        || deleted_at.is_some()
+        || expires_at.is_some_and(|e| e <= Utc::now())
+    {
+        return Err(ApiError(CloakError::NotFound(
+            "attachment is expired or deleted".into(),
+        )));
     }
 
     let obj_key: String = sqlx::query_scalar(
@@ -343,7 +373,9 @@ pub async fn delete_attachment(
 
     let ctx = require_active_member(&state.db, room_id, auth.device_id).await?;
     if uploader != auth.device_id && !has_permission(&state.db, &ctx, "manage_messages").await? {
-        return Err(ApiError(CloakError::Forbidden("not authorized to delete attachment".into())));
+        return Err(ApiError(CloakError::Forbidden(
+            "not authorized to delete attachment".into(),
+        )));
     }
 
     let mut tx = state.db.begin().await?;
@@ -356,10 +388,11 @@ pub async fn delete_attachment(
         .bind(size)
         .execute(&mut *tx)
         .await?;
-    let keys: Vec<String> = sqlx::query_scalar("SELECT object_key FROM attachment_chunks WHERE attachment_id = $1")
-        .bind(attachment_id)
-        .fetch_all(&mut *tx)
-        .await?;
+    let keys: Vec<String> =
+        sqlx::query_scalar("SELECT object_key FROM attachment_chunks WHERE attachment_id = $1")
+            .bind(attachment_id)
+            .fetch_all(&mut *tx)
+            .await?;
     for key in &keys {
         sqlx::query(
             "INSERT INTO retention_jobs (id, room_id, job_type, target_id, object_key) VALUES ($1, $2, 'purge_attachment_object', $3, $4)",
@@ -401,4 +434,3 @@ fn row_to_attachment(row: sqlx::postgres::PgRow) -> AttachmentMetadataDto {
         created_at: created.to_rfc3339(),
     }
 }
-

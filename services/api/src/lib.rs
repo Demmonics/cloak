@@ -5,13 +5,13 @@ pub mod routes;
 pub mod state;
 
 use axum::{
+    Json, Router,
     body::Body,
     extract::{DefaultBodyLimit, State},
-    http::{header, HeaderValue, Method, Request},
+    http::{HeaderValue, Method, Request, header},
     middleware::{self, Next},
     response::Response,
     routing::{delete, get, patch, post, put},
-    Json, Router,
 };
 use std::sync::Arc;
 use tower_http::{
@@ -26,10 +26,7 @@ use crate::{
     state::{AppState, WsHub},
 };
 use cloak_core::{
-    config::AppConfig,
-    db::connect_and_migrate,
-    livekit::LiveKitClient,
-    object_store::ObjectStore,
+    config::AppConfig, db::connect_and_migrate, livekit::LiveKitClient, object_store::ObjectStore,
     state_store::StateStore,
 };
 
@@ -45,7 +42,9 @@ pub async fn build_state(config: AppConfig) -> Result<AppState, cloak_core::erro
             }
         },
         None => {
-            tracing::warn!("Using single-node in-memory dev state store (requires Redis in production)");
+            tracing::warn!(
+                "Using single-node in-memory dev state store (requires Redis in production)"
+            );
             StateStore::in_memory_dev()
         }
     };
@@ -112,23 +111,38 @@ pub fn build_router(state: AppState) -> Router {
         .route("/auth/challenge", post(routes::auth::create_challenge))
         .route("/auth/session", post(routes::auth::exchange_session))
         .route("/auth/logout", post(routes::auth::logout))
-        .route("/rooms", post(routes::rooms::create_room).get(routes::rooms::list_rooms))
+        .route(
+            "/rooms",
+            post(routes::rooms::create_room).get(routes::rooms::list_rooms),
+        )
         .route(
             "/rooms/{room_id}",
             get(routes::rooms::get_room).patch(routes::rooms::update_room),
         )
-        .route("/rooms/{room_id}/channels", post(routes::rooms::create_channel))
+        .route(
+            "/rooms/{room_id}/channels",
+            post(routes::rooms::create_channel),
+        )
         .route(
             "/rooms/{room_id}/channels/{channel_id}",
             patch(routes::rooms::update_channel).delete(routes::rooms::delete_channel),
         )
-        .route("/rooms/{room_id}/epochs/rotate", post(routes::rooms::rotate_epoch))
-        .route("/rooms/{room_id}/burn", post(routes::rooms::burn_room_history))
+        .route(
+            "/rooms/{room_id}/epochs/rotate",
+            post(routes::rooms::rotate_epoch),
+        )
+        .route(
+            "/rooms/{room_id}/burn",
+            post(routes::rooms::burn_room_history),
+        )
         .route(
             "/rooms/{room_id}/invites",
             post(routes::invites::create_invite).get(routes::invites::list_invites),
         )
-        .route("/rooms/{room_id}/invites/{invite_id}", delete(routes::invites::revoke_invite))
+        .route(
+            "/rooms/{room_id}/invites/{invite_id}",
+            delete(routes::invites::revoke_invite),
+        )
         .route("/invites/inspect", get(routes::invites::inspect_invite))
         .route("/invites/join", post(routes::invites::join_invite))
         .route(
@@ -184,7 +198,8 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/attachments/{attachment_id}",
-            get(routes::attachments::get_attachment_meta).delete(routes::attachments::delete_attachment),
+            get(routes::attachments::get_attachment_meta)
+                .delete(routes::attachments::delete_attachment),
         )
         .route(
             "/rooms/{room_id}/channels/{channel_id}/call-token",
@@ -194,7 +209,10 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .nest("/api/v1", api_v1)
-        .layer(middleware::from_fn_with_state(state.clone(), origin_guard_middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            origin_guard_middleware,
+        ))
         .layer(cors)
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
@@ -219,4 +237,3 @@ pub fn build_router(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
-

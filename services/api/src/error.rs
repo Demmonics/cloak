@@ -1,7 +1,7 @@
 use axum::{
-    http::{header, HeaderValue, StatusCode},
-    response::{IntoResponse, Response},
     Json,
+    http::{HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
 };
 use cloak_core::error::CloakError;
 use serde::Serialize;
@@ -37,7 +37,9 @@ impl IntoResponse for ApiError {
             CloakError::Forbidden(m) => (StatusCode::FORBIDDEN, "forbidden", m, None),
             CloakError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found", m, None),
             CloakError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m, None),
-            CloakError::PayloadTooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large", m, None),
+            CloakError::PayloadTooLarge(m) => {
+                (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large", m, None)
+            }
             CloakError::RateLimited { retry_after_secs } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
@@ -74,12 +76,11 @@ impl IntoResponse for ApiError {
         )
             .into_response();
 
-        if let Some(secs) = retry_after {
-            if let Ok(val) = HeaderValue::from_str(&secs.to_string()) {
-                resp.headers_mut().insert(header::RETRY_AFTER, val);
-            }
+        if let Some(secs) = retry_after
+            && let Ok(val) = HeaderValue::from_str(&secs.to_string())
+        {
+            resp.headers_mut().insert(header::RETRY_AFTER, val);
         }
         resp
     }
 }
-

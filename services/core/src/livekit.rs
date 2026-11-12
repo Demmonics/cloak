@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -114,7 +114,10 @@ impl LiveKitClient {
             return;
         };
 
-        let url = format!("{}/twirp/livekit.RoomService/RemoveParticipant", self.http_url);
+        let url = format!(
+            "{}/twirp/livekit.RoomService/RemoveParticipant",
+            self.http_url
+        );
         let _ = self
             .http
             .post(url)
@@ -127,4 +130,3 @@ impl LiveKitClient {
             .await;
     }
 }
-

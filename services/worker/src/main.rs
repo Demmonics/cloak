@@ -1,7 +1,5 @@
 use chrono::Utc;
-use cloak_core::{
-    config::AppConfig, db::connect_and_migrate, object_store::ObjectStore,
-};
+use cloak_core::{config::AppConfig, db::connect_and_migrate, object_store::ObjectStore};
 use sqlx::{PgPool, Row};
 use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -27,7 +25,10 @@ async fn main() {
         .expect("failed to initialize object store");
 
     let interval = Duration::from_secs(config.retention_check_secs.max(5));
-    tracing::info!(interval_secs = interval.as_secs(), "Cloak retention worker started");
+    tracing::info!(
+        interval_secs = interval.as_secs(),
+        "Cloak retention worker started"
+    );
 
     loop {
         if let Err(err) = run_retention_sweep(&pool, &object_store).await {
@@ -123,10 +124,11 @@ pub async fn run_retention_sweep(
             .bind(size)
             .execute(&mut *tx)
             .await?;
-        let keys: Vec<String> = sqlx::query_scalar("SELECT object_key FROM attachment_chunks WHERE attachment_id = $1")
-            .bind(att_id)
-            .fetch_all(&mut *tx)
-            .await?;
+        let keys: Vec<String> =
+            sqlx::query_scalar("SELECT object_key FROM attachment_chunks WHERE attachment_id = $1")
+                .bind(att_id)
+                .fetch_all(&mut *tx)
+                .await?;
         for k in keys {
             sqlx::query(
                 "INSERT INTO retention_jobs (id, room_id, job_type, target_id, object_key) VALUES ($1, $2, 'purge_attachment_object', $3, $4)",
@@ -194,16 +196,15 @@ mod tests {
         let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgres://cloak:cloak_dev_pass_2026@127.0.0.1:55432/cloak_dev".to_string()
         });
-        let pool = connect_and_migrate(&db_url, 5)
-            .await
-            .expect("connect db");
+        let pool = connect_and_migrate(&db_url, 5).await.expect("connect db");
         let store_dir = std::env::temp_dir().join(format!("cloak-worker-it-{}", Uuid::new_v4()));
         let cfg = AppConfig {
             env: CloakEnv::Test,
             api_host: "127.0.0.1".into(),
             api_port: 8080,
             allowed_origins: vec![],
-            session_jwt_secret: "test_worker_jwt_secret_minimum_64_characters_long_000000000000000".into(),
+            session_jwt_secret: "test_worker_jwt_secret_minimum_64_characters_long_000000000000000"
+                .into(),
             database_url: db_url,
             database_max_connections: 5,
             redis_url: None,
@@ -282,7 +283,10 @@ mod tests {
         .unwrap();
 
         let chunk_key = format!("rooms/{room_id}/att/{att_id}/0");
-        store.put_object(&chunk_key, Bytes::from_static(b"encrypted-chunk-bytes")).await.unwrap();
+        store
+            .put_object(&chunk_key, Bytes::from_static(b"encrypted-chunk-bytes"))
+            .await
+            .unwrap();
 
         sqlx::query(
             "INSERT INTO encrypted_attachments (id, room_id, uploader_device_id, encryption_epoch, state, object_key, expected_ciphertext_bytes, actual_ciphertext_bytes, chunk_size_bytes, total_chunks, stream_header, expires_at) VALUES ($1, $2, $3, 1, 'uploaded', $4, 256, 256, 1024, 1, $5, $6)",
@@ -308,25 +312,28 @@ mod tests {
 
         run_retention_sweep(&pool, &store).await.unwrap();
 
-        let wiped_ct: Vec<u8> = sqlx::query_scalar("SELECT ciphertext FROM encrypted_messages WHERE id = $1")
-            .bind(msg_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let wiped_ct: Vec<u8> =
+            sqlx::query_scalar("SELECT ciphertext FROM encrypted_messages WHERE id = $1")
+                .bind(msg_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert!(wiped_ct.is_empty());
 
-        let scope: String = sqlx::query_scalar("SELECT scope FROM message_tombstones WHERE message_id = $1")
-            .bind(msg_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let scope: String =
+            sqlx::query_scalar("SELECT scope FROM message_tombstones WHERE message_id = $1")
+                .bind(msg_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(scope, "expired");
 
-        let att_state: String = sqlx::query_scalar("SELECT state FROM encrypted_attachments WHERE id = $1")
-            .bind(att_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let att_state: String =
+            sqlx::query_scalar("SELECT state FROM encrypted_attachments WHERE id = $1")
+                .bind(att_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(att_state, "expired");
 
         let used_bytes: i64 = sqlx::query_scalar("SELECT used_bytes FROM rooms WHERE id = $1")
@@ -339,8 +346,16 @@ mod tests {
         assert!(store.get_object(&chunk_key).await.is_err());
 
         // Cleanup test fixtures
-        sqlx::query("DELETE FROM rooms WHERE id = $1").bind(room_id).execute(&pool).await.unwrap();
-        sqlx::query("DELETE FROM device_identities WHERE id = $1").bind(device_id).execute(&pool).await.unwrap();
+        sqlx::query("DELETE FROM rooms WHERE id = $1")
+            .bind(room_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM device_identities WHERE id = $1")
+            .bind(device_id)
+            .execute(&pool)
+            .await
+            .unwrap();
         let _ = std::fs::remove_dir_all(&store_dir);
     }
 }

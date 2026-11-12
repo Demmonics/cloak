@@ -1,6 +1,8 @@
 # Dependencies & builds
 node_modules/
 dist/
+dist-windows/*.exe
+dist-windows/*.zip
 build/
 target/
 *.tsbuildinfo

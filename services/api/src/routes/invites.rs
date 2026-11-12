@@ -1,9 +1,9 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::HeaderMap,
-    Json,
 };
-use base64::{engine::general_purpose::STANDARD as B64_STD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64_STD};
 use chrono::{DateTime, Duration, Utc};
 use cloak_core::{
     auth::{
@@ -20,7 +20,7 @@ use crate::{
     authz::require_permission,
     error::ApiError,
     extractors::AuthenticatedDevice,
-    routes::rooms::{broadcast_room_event, fetch_room_detail, EpochEnvelopeInput, RoomDetailDto},
+    routes::rooms::{EpochEnvelopeInput, RoomDetailDto, broadcast_room_event, fetch_room_detail},
     state::AppState,
 };
 
@@ -146,7 +146,9 @@ pub async fn create_invite(
         }
     });
     if !matches!(access_scope.as_str(), "read_only" | "read_write") {
-        return Err(ApiError(CloakError::BadRequest("invalid accessScope".into())));
+        return Err(ApiError(CloakError::BadRequest(
+            "invalid accessScope".into(),
+        )));
     }
 
     let effective_role_name = if access_scope == "read_only" {
@@ -155,21 +157,27 @@ pub async fn create_invite(
         role_name.as_str()
     };
 
-    let role_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM roles WHERE room_id = $1 AND name = $2",
-    )
-    .bind(room_id)
-    .bind(effective_role_name)
-    .fetch_one(&state.db)
-    .await?;
+    let role_id: Uuid = sqlx::query_scalar("SELECT id FROM roles WHERE room_id = $1 AND name = $2")
+        .bind(room_id)
+        .bind(effective_role_name)
+        .fetch_one(&state.db)
+        .await?;
 
     let token_hash = sha256_bytes(req.invite_token.as_bytes());
-    let wrapped_blob = decode_base64_any(&req.wrapped_room_key_blob_b64, 512, "wrappedRoomKeyBlobB64")?;
-    let password_hash = match req.password.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let wrapped_blob =
+        decode_base64_any(&req.wrapped_room_key_blob_b64, 512, "wrappedRoomKeyBlobB64")?;
+    let password_hash = match req
+        .password
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         Some(pw) => Some(hash_invite_password(pw)?),
         None => None,
     };
-    let expires_at = req.expires_in_hours.map(|h| Utc::now() + Duration::hours(h.max(1)));
+    let expires_at = req
+        .expires_in_hours
+        .map(|h| Utc::now() + Duration::hours(h.max(1)));
     let invite_id = Uuid::new_v4();
 
     let row = sqlx::query(
@@ -255,7 +263,9 @@ pub async fn revoke_invite(
     .await?;
 
     if res.rows_affected() == 0 {
-        return Err(ApiError(CloakError::NotFound("invite not found or already revoked".into())));
+        return Err(ApiError(CloakError::NotFound(
+            "invite not found or already revoked".into(),
+        )));
     }
     Ok(Json(serde_json::json!({ "revoked": true })))
 }
@@ -330,7 +340,12 @@ pub async fn join_invite(
     let cap = state.config.rate_limits.join_per_min;
     state
         .state_store
-        .enforce_rate_limit(&format!("join:{ip}:{}", auth.device_id), cap, cap as f64 / 60.0, 60)
+        .enforce_rate_limit(
+            &format!("join:{ip}:{}", auth.device_id),
+            cap,
+            cap as f64 / 60.0,
+            60,
+        )
         .await?;
 
     let token_hash = sha256_bytes(req.token.trim().as_bytes());
@@ -360,7 +375,9 @@ pub async fn join_invite(
             .as_deref()
             .ok_or_else(|| CloakError::Unauthorized("invitation requires a password".into()))?;
         if !verify_invite_password(supplied, &pw_hash)? {
-            return Err(ApiError(CloakError::Unauthorized("incorrect invitation password".into())));
+            return Err(ApiError(CloakError::Unauthorized(
+                "incorrect invitation password".into(),
+            )));
         }
     }
 
@@ -370,13 +387,12 @@ pub async fn join_invite(
     let requires_approval: bool = row.get("requires_approval");
     let wrapped_epoch: i64 = row.get("wrapped_epoch");
 
-    let existing_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM memberships WHERE room_id = $1 AND device_id = $2",
-    )
-    .bind(room_id)
-    .bind(auth.device_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let existing_status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM memberships WHERE room_id = $1 AND device_id = $2")
+            .bind(room_id)
+            .bind(auth.device_id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
     if matches!(existing_status.as_deref(), Some("banned")) {
         return Err(ApiError(CloakError::Forbidden(
@@ -419,33 +435,41 @@ pub async fn join_invite(
     .execute(&mut *tx)
     .await?;
 
-    if target_status == "active" {
-        if let (Some(wrapped_b64), Some(x_pk_b64)) =
+    if target_status == "active"
+        && let (Some(wrapped_b64), Some(x_pk_b64)) =
             (&req.self_wrapped_epoch_key_b64, &req.x25519_public_key_b64)
-        {
-            let wrapped = decode_base64_any(wrapped_b64, 512, "selfWrappedEpochKeyB64")?;
-            let x_pk = decode_base64_exact(x_pk_b64, 32, "x25519PublicKeyB64")?;
-            sqlx::query(
-                r#"
+    {
+        let wrapped = decode_base64_any(wrapped_b64, 512, "selfWrappedEpochKeyB64")?;
+        let x_pk = decode_base64_exact(x_pk_b64, 32, "x25519PublicKeyB64")?;
+        sqlx::query(
+            r#"
                 INSERT INTO epoch_key_envelopes (id, room_id, epoch, recipient_device_id, sender_device_id, sender_x25519_public_key, wrapped_key_ciphertext)
                 VALUES ($1, $2, $3, $4, $4, $5, $6)
                 ON CONFLICT (room_id, epoch, recipient_device_id) DO NOTHING
                 "#,
-            )
-            .bind(Uuid::new_v4())
-            .bind(room_id)
-            .bind(wrapped_epoch)
-            .bind(auth.device_id)
-            .bind(&x_pk)
-            .bind(&wrapped)
-            .execute(&mut *tx)
-            .await?;
-        }
+        )
+        .bind(Uuid::new_v4())
+        .bind(room_id)
+        .bind(wrapped_epoch)
+        .bind(auth.device_id)
+        .bind(&x_pk)
+        .bind(&wrapped)
+        .execute(&mut *tx)
+        .await?;
     }
 
     tx.commit().await?;
 
-    broadcast_room_event(&state, room_id, None, None, auth.device_id, "member.updated", None).await?;
+    broadcast_room_event(
+        &state,
+        room_id,
+        None,
+        None,
+        auth.device_id,
+        "member.updated",
+        None,
+    )
+    .await?;
 
     let room_detail = if target_status == "active" {
         Some(fetch_room_detail(&state.db, room_id, auth.device_id).await?)
@@ -467,7 +491,11 @@ pub async fn approve_member(
     Json(req): Json<ApproveMemberRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let _ctx = require_permission(&state.db, room_id, auth.device_id, "manage_members").await?;
-    let sender_x_pk = decode_base64_exact(&req.sender_x25519_public_key_b64, 32, "senderX25519PublicKeyB64")?;
+    let sender_x_pk = decode_base64_exact(
+        &req.sender_x25519_public_key_b64,
+        32,
+        "senderX25519PublicKeyB64",
+    )?;
 
     let mut tx = state.db.begin().await?;
     let res = sqlx::query(
@@ -479,7 +507,9 @@ pub async fn approve_member(
     .await?;
 
     if res.rows_affected() == 0 {
-        return Err(ApiError(CloakError::NotFound("no pending approval for device".into())));
+        return Err(ApiError(CloakError::NotFound(
+            "no pending approval for device".into(),
+        )));
     }
 
     let current_epoch: i64 = sqlx::query_scalar("SELECT current_epoch FROM rooms WHERE id = $1")
@@ -488,7 +518,11 @@ pub async fn approve_member(
         .await?;
 
     for env in req.envelopes {
-        let wrapped = decode_base64_any(&env.wrapped_key_ciphertext_b64, 512, "wrappedKeyCiphertextB64")?;
+        let wrapped = decode_base64_any(
+            &env.wrapped_key_ciphertext_b64,
+            512,
+            "wrappedKeyCiphertextB64",
+        )?;
         sqlx::query(
             r#"
             INSERT INTO epoch_key_envelopes (id, room_id, epoch, recipient_device_id, sender_device_id, sender_x25519_public_key, wrapped_key_ciphertext)
@@ -508,7 +542,16 @@ pub async fn approve_member(
     }
 
     tx.commit().await?;
-    broadcast_room_event(&state, room_id, None, None, auth.device_id, "member.updated", None).await?;
+    broadcast_room_event(
+        &state,
+        room_id,
+        None,
+        None,
+        auth.device_id,
+        "member.updated",
+        None,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "approved": true })))
 }
 
@@ -520,13 +563,17 @@ pub async fn update_member_role(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let ctx = require_permission(&state.db, room_id, auth.device_id, "manage_members").await?;
     if target_device_id == ctx.owner_device_id {
-        return Err(ApiError(CloakError::Forbidden("cannot alter room owner role".into())));
+        return Err(ApiError(CloakError::Forbidden(
+            "cannot alter room owner role".into(),
+        )));
     }
     if !matches!(req.role_name.as_str(), "admin" | "member" | "readonly") {
         return Err(ApiError(CloakError::BadRequest("invalid roleName".into())));
     }
     if req.role_name == "admin" && auth.device_id != ctx.owner_device_id {
-        return Err(ApiError(CloakError::Forbidden("only owner may promote to admin".into())));
+        return Err(ApiError(CloakError::Forbidden(
+            "only owner may promote to admin".into(),
+        )));
     }
 
     let role_id: Uuid = sqlx::query_scalar("SELECT id FROM roles WHERE room_id = $1 AND name = $2")
@@ -542,7 +589,16 @@ pub async fn update_member_role(
         .execute(&state.db)
         .await?;
 
-    broadcast_room_event(&state, room_id, None, None, auth.device_id, "member.updated", None).await?;
+    broadcast_room_event(
+        &state,
+        room_id,
+        None,
+        None,
+        auth.device_id,
+        "member.updated",
+        None,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "updated": true })))
 }
 
@@ -554,12 +610,18 @@ pub async fn remove_member(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let ctx = require_permission(&state.db, room_id, auth.device_id, "manage_members").await?;
     if target_device_id == ctx.owner_device_id {
-        return Err(ApiError(CloakError::Forbidden("cannot remove or ban room owner".into())));
+        return Err(ApiError(CloakError::Forbidden(
+            "cannot remove or ban room owner".into(),
+        )));
     }
     let next_status = match req.action.as_str() {
         "kick" => "removed",
         "ban" => "banned",
-        _ => return Err(ApiError(CloakError::BadRequest("action must be kick or ban".into()))),
+        _ => {
+            return Err(ApiError(CloakError::BadRequest(
+                "action must be kick or ban".into(),
+            )));
+        }
     };
 
     let mut tx = state.db.begin().await?;
@@ -574,7 +636,9 @@ pub async fn remove_member(
     .await?;
 
     let mut new_epoch = ctx.current_epoch;
-    if let (Some(spk_b64), Some(envelopes)) = (&req.sender_x25519_public_key_b64, &req.rotated_envelopes) {
+    if let (Some(spk_b64), Some(envelopes)) =
+        (&req.sender_x25519_public_key_b64, &req.rotated_envelopes)
+    {
         let sender_x_pk = decode_base64_exact(spk_b64, 32, "senderX25519PublicKeyB64")?;
         new_epoch = sqlx::query_scalar(
             "UPDATE rooms SET current_epoch = current_epoch + 1, updated_at = NOW() WHERE id = $1 RETURNING current_epoch",
@@ -596,7 +660,11 @@ pub async fn remove_member(
             if env.recipient_device_id == target_device_id {
                 continue;
             }
-            let wrapped = decode_base64_any(&env.wrapped_key_ciphertext_b64, 512, "wrappedKeyCiphertextB64")?;
+            let wrapped = decode_base64_any(
+                &env.wrapped_key_ciphertext_b64,
+                512,
+                "wrappedKeyCiphertextB64",
+            )?;
             sqlx::query(
                 r#"
                 INSERT INTO epoch_key_envelopes (id, room_id, epoch, recipient_device_id, sender_device_id, sender_x25519_public_key, wrapped_key_ciphertext)
@@ -632,23 +700,36 @@ pub async fn remove_member(
             .await;
     }
 
-    broadcast_room_event(&state, room_id, None, None, auth.device_id, "member.updated", None).await?;
-    Ok(Json(serde_json::json!({ "status": next_status, "epoch": new_epoch })))
+    broadcast_room_event(
+        &state,
+        room_id,
+        None,
+        None,
+        auth.device_id,
+        "member.updated",
+        None,
+    )
+    .await?;
+    Ok(Json(
+        serde_json::json!({ "status": next_status, "epoch": new_epoch }),
+    ))
 }
 
 fn validate_invite_row(row: &sqlx::postgres::PgRow) -> Result<(), CloakError> {
     if row.get::<Option<DateTime<Utc>>, _>("revoked_at").is_some() {
         return Err(CloakError::Forbidden("invitation has been revoked".into()));
     }
-    if let Some(exp) = row.get::<Option<DateTime<Utc>>, _>("expires_at") {
-        if exp <= Utc::now() {
-            return Err(CloakError::Forbidden("invitation has expired".into()));
-        }
+    if let Some(exp) = row.get::<Option<DateTime<Utc>>, _>("expires_at")
+        && exp <= Utc::now()
+    {
+        return Err(CloakError::Forbidden("invitation has expired".into()));
     }
     if let Some(max_uses) = row.get::<Option<i32>, _>("max_uses") {
         let uses: i32 = row.get("uses_count");
         if uses >= max_uses {
-            return Err(CloakError::Forbidden("invitation usage limit reached".into()));
+            return Err(CloakError::Forbidden(
+                "invitation usage limit reached".into(),
+            ));
         }
     }
     Ok(())

@@ -1,8 +1,8 @@
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
-use base64::{engine::general_purpose::STANDARD as B64_STD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64_STD};
 use chrono::{DateTime, Duration, Utc};
 use cloak_core::{auth::decode_base64_any, error::CloakError};
 use serde::{Deserialize, Serialize};
@@ -142,13 +142,20 @@ pub async fn send_message(
         )
         .await?;
 
-    let ch = require_channel_access(&state.db, room_id, channel_id, auth.device_id, true, false).await?;
+    let ch =
+        require_channel_access(&state.db, room_id, channel_id, auth.device_id, true, false).await?;
 
-    if ch.slow_mode_seconds > 0 && ch.member.role_name != "owner" && ch.member.role_name != "admin" {
+    if ch.slow_mode_seconds > 0 && ch.member.role_name != "owner" && ch.member.role_name != "admin"
+    {
         let slow_key = format!("slowmode:{channel_id}:{}", auth.device_id);
         state
             .state_store
-            .enforce_rate_limit(&slow_key, 1, 1.0 / ch.slow_mode_seconds as f64, ch.slow_mode_seconds as u64)
+            .enforce_rate_limit(
+                &slow_key,
+                1,
+                1.0 / ch.slow_mode_seconds as f64,
+                ch.slow_mode_seconds as u64,
+            )
             .await?;
     }
 
@@ -271,7 +278,10 @@ pub async fn send_message(
         "type": "message.created",
         "message": &dto
     });
-    state.ws_hub.broadcast_room(room_id, ws_msg.to_string()).await;
+    state
+        .ws_hub
+        .broadcast_room(room_id, ws_msg.to_string())
+        .await;
 
     Ok(Json(dto))
 }
@@ -282,7 +292,8 @@ pub async fn get_channel_messages(
     Path((room_id, channel_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<HistoryQuery>,
 ) -> Result<Json<Vec<EncryptedMessageDto>>, ApiError> {
-    let _ch = require_channel_access(&state.db, room_id, channel_id, auth.device_id, false, false).await?;
+    let _ch = require_channel_access(&state.db, room_id, channel_id, auth.device_id, false, false)
+        .await?;
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let before_seq = q.before_seq.unwrap_or(i64::MAX);
 
@@ -358,10 +369,17 @@ pub async fn edit_message(
 
     let sender: Uuid = msg_row.get("sender_device_id");
     if sender != auth.device_id {
-        return Err(ApiError(CloakError::Forbidden("only the sender can edit a message".into())));
+        return Err(ApiError(CloakError::Forbidden(
+            "only the sender can edit a message".into(),
+        )));
     }
-    if msg_row.get::<Option<DateTime<Utc>>, _>("deleted_for_everyone_at").is_some() {
-        return Err(ApiError(CloakError::Conflict("cannot edit deleted message".into())));
+    if msg_row
+        .get::<Option<DateTime<Utc>>, _>("deleted_for_everyone_at")
+        .is_some()
+    {
+        return Err(ApiError(CloakError::Conflict(
+            "cannot edit deleted message".into(),
+        )));
     }
 
     let channel_id: Uuid = msg_row.get("channel_id");
@@ -424,7 +442,10 @@ pub async fn edit_message(
             "createdAt": now.to_rfc3339(),
         }
     });
-    state.ws_hub.broadcast_room(room_id, ws_ev.to_string()).await;
+    state
+        .ws_hub
+        .broadcast_room(room_id, ws_ev.to_string())
+        .await;
 
     Ok(Json(row_to_message(updated)))
 }
@@ -449,7 +470,9 @@ pub async fn delete_message(
     let ctx = require_active_member(&state.db, room_id, auth.device_id).await?;
     let scope = q.scope.unwrap_or_else(|| "everyone".to_string());
     if !matches!(scope.as_str(), "me" | "everyone") {
-        return Err(ApiError(CloakError::BadRequest("scope must be 'me' or 'everyone'".into())));
+        return Err(ApiError(CloakError::BadRequest(
+            "scope must be 'me' or 'everyone'".into(),
+        )));
     }
 
     let mut tx = state.db.begin().await?;
@@ -466,7 +489,10 @@ pub async fn delete_message(
     let sender_id: Uuid = msg_row.get("sender_device_id");
 
     let db_scope = if scope == "me" { "device" } else { "everyone" };
-    if db_scope == "everyone" && sender_id != auth.device_id && !has_permission(&state.db, &ctx, "manage_messages").await? {
+    if db_scope == "everyone"
+        && sender_id != auth.device_id
+        && !has_permission(&state.db, &ctx, "manage_messages").await?
+    {
         return Err(ApiError(CloakError::Forbidden(
             "only sender or moderator may delete for everyone".into(),
         )));
@@ -481,7 +507,11 @@ pub async fn delete_message(
 
     let tombstone_id = Uuid::new_v4();
     let now = Utc::now();
-    let target_device = if db_scope == "device" { Some(auth.device_id) } else { None };
+    let target_device = if db_scope == "device" {
+        Some(auth.device_id)
+    } else {
+        None
+    };
 
     sqlx::query(
         r#"
@@ -597,7 +627,10 @@ pub async fn delete_message(
 
     if db_scope == "everyone" {
         let ws_msg = serde_json::json!({ "type": "tombstone", "tombstone": &dto });
-        state.ws_hub.broadcast_room(room_id, ws_msg.to_string()).await;
+        state
+            .ws_hub
+            .broadcast_room(room_id, ws_msg.to_string())
+            .await;
     }
 
     Ok(Json(dto))
@@ -674,7 +707,10 @@ pub async fn clear_channel_messages(
             "createdAt": now.to_rfc3339(),
         }
     });
-    state.ws_hub.broadcast_room(room_id, ws_msg.to_string()).await;
+    state
+        .ws_hub
+        .broadcast_room(room_id, ws_msg.to_string())
+        .await;
 
     Ok(Json(serde_json::json!({ "clearedCount": msg_ids.len() })))
 }
@@ -737,7 +773,10 @@ pub async fn react_message(
         created_at: now.to_rfc3339(),
     };
     let ws_msg = serde_json::json!({ "type": "event", "event": &dto });
-    state.ws_hub.broadcast_room(room_id, ws_msg.to_string()).await;
+    state
+        .ws_hub
+        .broadcast_room(room_id, ws_msg.to_string())
+        .await;
 
     Ok(Json(dto))
 }
@@ -981,4 +1020,3 @@ fn row_to_message(row: sqlx::postgres::PgRow) -> EncryptedMessageDto {
         created_at: created_at.to_rfc3339(),
     }
 }
-

@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::Serialize;
 use sqlx::Row;
@@ -40,13 +40,15 @@ pub async fn issue_call_token(
         )
         .await?;
 
-    let ch = require_channel_access(&state.db, room_id, channel_id, auth.device_id, false, true).await?;
+    let ch =
+        require_channel_access(&state.db, room_id, channel_id, auth.device_id, false, true).await?;
     let can_publish = has_permission(&state.db, &ch.member, "connect_voice").await?;
 
-    let display_name: String = sqlx::query_scalar("SELECT display_name FROM device_identities WHERE id = $1")
-        .bind(auth.device_id)
-        .fetch_one(&state.db)
-        .await?;
+    let display_name: String =
+        sqlx::query_scalar("SELECT display_name FROM device_identities WHERE id = $1")
+            .bind(auth.device_id)
+            .fetch_one(&state.db)
+            .await?;
 
     let livekit_room_name = format!("cloak-{room_id}-{channel_id}");
     let existing = sqlx::query(
@@ -89,4 +91,3 @@ pub async fn issue_call_token(
         expires_at: expires_at.to_rfc3339(),
     }))
 }
-

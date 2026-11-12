@@ -133,10 +133,12 @@ impl StateStore {
             Self::InMemory(store) => {
                 let mut map = store.buckets.lock().await;
                 let refill_per_ms = refill_per_sec / 1000.0;
-                let entry = map.entry(key.to_string()).or_insert_with(|| TokenBucketState {
-                    tokens: capacity as f64,
-                    last_refill_ms: now_ms,
-                });
+                let entry = map
+                    .entry(key.to_string())
+                    .or_insert_with(|| TokenBucketState {
+                        tokens: capacity as f64,
+                        last_refill_ms: now_ms,
+                    });
                 let elapsed = (now_ms - entry.last_refill_ms).max(0) as f64;
                 entry.tokens = (capacity as f64).min(entry.tokens + elapsed * refill_per_ms);
                 entry.last_refill_ms = now_ms;
@@ -244,7 +246,10 @@ impl StateStore {
         }
     }
 
-    pub async fn get_presences(&self, device_ids: &[Uuid]) -> Result<Vec<PresenceRecord>, CloakError> {
+    pub async fn get_presences(
+        &self,
+        device_ids: &[Uuid],
+    ) -> Result<Vec<PresenceRecord>, CloakError> {
         if device_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -279,7 +284,11 @@ impl StateStore {
         }
     }
 
-    pub async fn acquire_upload_slot(&self, device_id: Uuid, max_parallel: u32) -> Result<(), CloakError> {
+    pub async fn acquire_upload_slot(
+        &self,
+        device_id: Uuid,
+        max_parallel: u32,
+    ) -> Result<(), CloakError> {
         match self {
             Self::Redis(store) => {
                 let mut conn = store.manager.clone();
@@ -291,7 +300,9 @@ impl StateStore {
                 let _: bool = conn.expire(&key, 300).await.unwrap_or(false);
                 if count > max_parallel as i64 {
                     let _: i64 = conn.decr(&key, 1).await.unwrap_or(0);
-                    return Err(CloakError::RateLimited { retry_after_secs: 5 });
+                    return Err(CloakError::RateLimited {
+                        retry_after_secs: 5,
+                    });
                 }
                 Ok(())
             }
@@ -299,7 +310,9 @@ impl StateStore {
                 let mut map = store.upload_counts.lock().await;
                 let cur = map.entry(device_id).or_insert(0);
                 if *cur >= max_parallel {
-                    return Err(CloakError::RateLimited { retry_after_secs: 5 });
+                    return Err(CloakError::RateLimited {
+                        retry_after_secs: 5,
+                    });
                 }
                 *cur += 1;
                 Ok(())
@@ -326,4 +339,3 @@ impl StateStore {
         }
     }
 }
-
