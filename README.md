@@ -18,6 +18,83 @@ Built with a native Rust P2P transport and SQLite vault engine (`cloak-p2p`), a 
 
 ---
 
+## Architecture Overview
+
+Every Cloak client runs a complete local messaging node (`P2pNode`), local encrypted SQLite vault, loopback API server, and native Edge WebView2 UI inside a single desktop process (`apps/desktop`). Peers talk **directly machine-to-machine** over TCP and WebRTC with **no central chat, storage, or signaling server** in the path.
+
+```mermaid
+flowchart LR
+  subgraph PeerA["Peer A - Windows Desktop (apps/desktop)"]
+    UIA["React UI in Edge WebView2 (apps/web)"]
+    APIA["Loopback Axum API & WS (127.0.0.1 + session_token)"]
+    NODEA["P2pNode (crates/cloak-p2p)"]
+    DB_A["Local SQLite + DPAPI & XChaCha20-Poly1305 Vault"]
+    UIA <-->|Localhost HTTP / WS| APIA
+    APIA <--> NODEA
+    NODEA <--> DB_A
+  end
+
+  subgraph PeerB["Peer B - Windows Desktop (apps/desktop)"]
+    UIB["React UI in Edge WebView2 (apps/web)"]
+    APIB["Loopback Axum API & WS (127.0.0.1 + session_token)"]
+    NODEB["P2pNode (crates/cloak-p2p)"]
+    DB_B["Local SQLite + DPAPI & XChaCha20-Poly1305 Vault"]
+    UIB <-->|Localhost HTTP / WS| APIB
+    APIB <--> NODEB
+    NODEB <--> DB_B
+  end
+
+  NODEA <==>|"Direct Encrypted TCP (X25519 + Ed25519 + WireFrame)"| NODEB
+  UIA <-.->|"Direct WebRTC Media (SDP/ICE over WireFrame::WebRtcSignal)"| UIB
+```
+
+- **Local UI & API boundary:** The embedded WebView2 UI communicates only with a per-launch loopback Axum server on `127.0.0.1` guarded by a 32-byte `session_token` and Stealth lock middleware (`apps/desktop/src/server.rs`).
+- **Local source of truth:** Messages, room keys, peer trust records, offline outbox frames, and deletion tombstones live in each peer's own sealed SQLite database—never in a cloud database.
+- **No central server dependency:** While legacy `services/*` workspaces exist in the repository history, the native desktop application in `apps/desktop` operates fully peer-to-peer without starting or connecting to them.
+
+---
+
+## How Communication Works Without a Server
+
+1. **Self-Owned Identity & Direct Listener (`P2pNode::start`)**
+   Each desktop node generates its own **Ed25519** signing identity and **X25519** keypair inside its local vault, then binds a direct TCP listener (`--p2p-bind`) and discovers candidate interface addresses (`advertisedAddr` for LAN, Tailscale/VPN, or IPv6).
+
+2. **Out-of-Band Signed Pairing (`cloakp2p://...`)**
+   To connect without a directory server, Peer A generates a `PairingTicket` URI containing Peer A's `device_id`, public keys, direct and alternate socket addresses, room metadata/key epoch, plus a bounded `invite_id`, `expires_at_ms`, `max_uses` (default `1`), and an **Ed25519** signature (`invite_sig_b64`). You share that ticket over any channel you choose.
+
+3. **Direct Dial & Mutual Cryptographic Handshake (`DirectOnly` by Default)**
+   Peer B verifies the ticket signature locally and dials Peer A's socket candidates directly over TCP. By default (`ConnectivityMode::DirectOnly`), Cloak **refuses silent relay fallbacks** and reports actionable routing errors if no direct path succeeds (an opt-in `Assisted` mode exists for STUN/ICE assistance). Both peers run `PeerHandshake` (exchanging Ed25519 identity proofs, ephemeral X25519 keys, and 32-byte nonces), verify key pinning/revocation, confirm mutual HMAC transcript `HandshakeAck` frames, and derive session keys via `TransportSessionCrypto` (with in-session `WireFrame::Rekey` ratcheting).
+
+4. **Room Admission & State Sync**
+   Transport authentication alone does not grant room access. Peer B presents `WireFrame::JoinWithInvite`; Peer A validates the signature, expiry, revocation status, and remaining uses atomically in `room_invitations` before replying with `JoinAccepted` or `JoinRejected`. Once admitted to `room_members`, peers synchronize history directly using `SyncRequest` and `SyncBatch`.
+
+5. **Direct Fan-Out & Offline Outbox (`queue_outbox_frame` / `pop_outbox_for_peer`)**
+   When sending a message or file, the sender persists it in SQLite and writes encrypted frames (`WireFrame::Message`, `FileInit`, `FileChunk`, `Tombstone`) directly to currently connected `room_members`. If a peer is offline, frames are queued locally per peer in SQLite and automatically flushed as soon as that peer reconnects and passes handshake authentication.
+
+6. **Serverless Voice, Video & Screen Sharing**
+   Instead of a central WebRTC signaling server, SDP offers/answers and ICE candidates travel directly inside the authenticated, encrypted P2P TCP tunnel as `WireFrame::WebRtcSignal`, establishing direct peer-to-peer media streams between the two clients.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Peer A (P2pNode + SQLite)
+  participant OOB as Out-of-Band Channel
+  participant B as Peer B (P2pNode + SQLite)
+
+  A->>OOB: Export signed PairingTicket (cloakp2p://host:port + invite_sig)
+  OOB->>B: Paste / import ticket
+  B->>A: Direct TCP dial + PeerHandshake (Ed25519 + X25519 + nonce)
+  A-->>B: PeerHandshake + HandshakeAck (session keys derived)
+  B->>A: WireFrame::JoinWithInvite (signed invite_id)
+  A-->>B: JoinAccepted + SyncBatch (messages, attachments, tombstones)
+  A->>B: WireFrame::Message / FileChunk (or queue_outbox_frame if offline)
+  B-->>A: Reconnect later -> pop_outbox_for_peer flushes queued frames
+  A->>B: WireFrame::WebRtcSignal (SDP / ICE over encrypted TCP)
+  A-->>B: Direct WebRTC audio / video / native screen stream
+```
+
+---
+
 ## Core Capabilities
 
 ### 1. Zero-Server Direct P2P & Signed Room Authorization
@@ -143,3 +220,4 @@ npx playwright test tests/e2e/p2p-desktop.spec.ts tests/e2e/stealth-mode.spec.ts
 - [Phase 12 Visual QA](docs/PHASE_12_VISUAL_QA.md)
 - [Phase 12 Test Results](docs/PHASE_12_TEST_RESULTS.md)
 - [Phase 12 Release Readiness](docs/PHASE_12_RELEASE_READINESS.md)
+
