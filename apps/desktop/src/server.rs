@@ -7,11 +7,13 @@ use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use cloak_p2p::{
-    ConnectivityMode, GhostPolicy, GhostRoomOverride, GhostTriggerKind, P2pError, P2pNode,
-    PairingTicket, WebRtcSignalPayload,
+    ActiveCallPrivacySummary, ConnectivityMode, GhostPolicy, GhostRoomOverride, GhostTriggerKind,
+    LocalDeletionAction, NotificationPrivacyLevel, P2pError, P2pNode, PairingTicket,
+    PdfDocumentStateUpdate, PrivacyTriggerKind, SecretCodeAction, StealthConfig, UnlockMethod,
+    WebRtcSignalPayload,
 };
 use futures_util::{SinkExt, StreamExt};
 use include_dir::{Dir, include_dir};
@@ -163,8 +165,27 @@ async fn require_loopback_auth(
     next.run(req).await
 }
 
+/// Blocks private messenger/settings APIs while Rust's StealthController is in a locked state.
+async fn require_unlocked_stealth(
+    State(st): State<DesktopState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    if st.node.is_stealth_locked() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ErrorBody {
+                code: "STEALTH_LOCKED",
+                error: "Private workspace is locked; authenticate via Stealth unlock first".into(),
+            }),
+        )
+            .into_response();
+    }
+    next.run(req).await
+}
+
 pub fn build_router(state: DesktopState) -> Router {
-    let api_routes = Router::new()
+    let private_routes = Router::new()
         .route("/status", get(get_status))
         .route("/identity", patch(update_identity))
         .route("/network/diagnostics", get(get_network_diagnostics))
@@ -204,15 +225,66 @@ pub fn build_router(state: DesktopState) -> Router {
         .route("/ghost/modal", post(set_modal_state))
         .route("/ghost/overrides", get(list_ghost_overrides))
         .route("/ghost/overrides/{room_id}", put(set_ghost_override))
+        // Stealth Configuration & Secret Codes (Unlocked Only)
+        .route(
+            "/stealth/settings",
+            get(get_stealth_settings).put(update_stealth_settings),
+        )
+        .route(
+            "/stealth/codes",
+            get(list_stealth_codes).post(create_stealth_code),
+        )
+        .route("/stealth/codes/{id}", delete(delete_stealth_code))
+        .route("/stealth/passphrase", post(set_stealth_passphrase))
+        .route("/stealth/recovery-code", post(generate_stealth_recovery))
+        .route("/stealth/test-preview", post(run_stealth_test_preview))
         // Native Windows Capture & File Picker APIs
         .route("/capture/sources", get(list_capture_sources))
         .route("/capture/frame/{source_id}", get(capture_source_frame))
         .route("/dialog/pick-files", post(pick_native_files))
-        .route("/ws", get(ws_events))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
-            require_loopback_auth,
+            require_unlocked_stealth,
         ));
+
+    let locked_safe_routes = Router::new()
+        .route("/stealth/bootstrap", get(get_stealth_bootstrap))
+        .route("/stealth/unlock", post(stealth_unlock))
+        .route("/stealth/recover", post(stealth_recover))
+        .route("/stealth/trigger", post(stealth_trigger))
+        .route(
+            "/stealth/foreground-activity",
+            post(stealth_foreground_activity),
+        )
+        .route("/stealth/system-idle", post(stealth_report_system_idle))
+        .route("/stealth/call-summary", post(stealth_update_call_summary))
+        .route("/stealth/return-messenger", post(stealth_return_messenger))
+        .route(
+            "/stealth/test-clock-advance",
+            post(stealth_test_clock_advance),
+        )
+        .route(
+            "/pdf/documents",
+            get(list_pdf_docs)
+                .post(upload_pdf_doc)
+                .layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
+        )
+        .route("/pdf/documents/pick", post(pick_native_pdf))
+        .route("/pdf/documents/sample", post(create_sample_pdf_doc))
+        .route("/pdf/documents/{id}/content", get(get_pdf_content))
+        .route(
+            "/pdf/documents/{id}",
+            patch(patch_pdf_doc).delete(delete_pdf_doc),
+        )
+        .route("/ws", get(ws_events));
+
+    let api_routes =
+        private_routes
+            .merge(locked_safe_routes)
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_loopback_auth,
+            ));
 
     Router::new()
         .nest("/p2p/v1", api_routes)
@@ -735,6 +807,445 @@ async fn pick_native_files(
     }
 }
 
+// ==================== Stealth Mode & PDF Library Routes ====================
+
+async fn get_stealth_bootstrap(State(st): State<DesktopState>) -> Response {
+    Json(st.node.get_stealth_bootstrap()).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StealthUnlockReq {
+    method: UnlockMethod,
+    #[serde(default)]
+    secret: String,
+    additional_secret: Option<String>,
+}
+
+async fn stealth_unlock(
+    State(st): State<DesktopState>,
+    Json(req): Json<StealthUnlockReq>,
+) -> Response {
+    let secret = req.secret;
+    let additional = req.additional_secret;
+    let node = st.node.clone();
+    match tokio::task::spawn_blocking(move || {
+        node.stealth()
+            .verify_and_unlock(req.method, &secret, additional.as_deref())
+    })
+    .await
+    {
+        Ok(Ok(outcome)) => Json(outcome).into_response(),
+        Ok(Err(err)) => map_p2p_error(err),
+        Err(_) => map_p2p_error(P2pError::Protocol("Unlock worker panicked".into())),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoverReq {
+    recovery_code: String,
+}
+
+async fn stealth_recover(State(st): State<DesktopState>, Json(req): Json<RecoverReq>) -> Response {
+    match st
+        .node
+        .stealth()
+        .recover_unlock_with_recovery_code(&req.recovery_code)
+    {
+        Ok(outcome) => Json(outcome).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+#[derive(Deserialize)]
+struct StealthTriggerReq {
+    trigger: PrivacyTriggerKind,
+}
+
+async fn stealth_trigger(
+    State(st): State<DesktopState>,
+    Json(req): Json<StealthTriggerReq>,
+) -> Response {
+    match st.node.stealth().handle_trigger(req.trigger) {
+        Ok(boot) => Json(boot).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn stealth_foreground_activity(State(st): State<DesktopState>) -> Response {
+    st.node.stealth().record_foreground_activity();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemIdleReq {
+    idle_ms: u64,
+}
+
+async fn stealth_report_system_idle(
+    State(st): State<DesktopState>,
+    Json(req): Json<SystemIdleReq>,
+) -> Response {
+    match st.node.stealth().report_system_idle_ms(req.idle_ms) {
+        Ok(()) => Json(st.node.get_stealth_bootstrap()).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn stealth_update_call_summary(
+    State(st): State<DesktopState>,
+    Json(summary): Json<ActiveCallPrivacySummary>,
+) -> Response {
+    Json(st.node.stealth().update_call_summary(summary)).into_response()
+}
+
+async fn stealth_return_messenger(State(st): State<DesktopState>) -> Response {
+    match st.node.stealth().switch_to_messenger_if_unlocked() {
+        Ok(boot) => Json(boot).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClockAdvanceReq {
+    delta_ms: i64,
+}
+
+async fn stealth_test_clock_advance(
+    State(st): State<DesktopState>,
+    Json(req): Json<ClockAdvanceReq>,
+) -> Response {
+    match st.node.stealth().advance_clock_ms(req.delta_ms) {
+        Ok(boot) => Json(boot).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn get_stealth_settings(State(st): State<DesktopState>) -> Response {
+    match st.node.stealth().get_config() {
+        Ok(cfg) => Json(cfg).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn update_stealth_settings(
+    State(st): State<DesktopState>,
+    Json(cfg): Json<StealthConfig>,
+) -> Response {
+    match st.node.stealth().update_config(cfg) {
+        Ok(saved) => Json(saved).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn list_stealth_codes(State(st): State<DesktopState>) -> Response {
+    match st.node.list_stealth_secret_codes() {
+        Ok(codes) => Json(codes).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateSecretCodeReq {
+    label: String,
+    code: String,
+    action: SecretCodeAction,
+    target_room_id: Option<String>,
+    #[serde(default = "default_true")]
+    case_sensitive: bool,
+    #[serde(default)]
+    require_additional_auth: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+async fn create_stealth_code(
+    State(st): State<DesktopState>,
+    Json(req): Json<CreateSecretCodeReq>,
+) -> Response {
+    match st.node.add_stealth_secret_code(
+        &req.label,
+        &req.code,
+        req.action,
+        req.target_room_id.as_deref(),
+        req.case_sensitive,
+        req.require_additional_auth,
+    ) {
+        Ok(meta) => Json(meta).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn delete_stealth_code(State(st): State<DesktopState>, Path(id): Path<String>) -> Response {
+    match st.node.remove_stealth_secret_code(&id) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => map_p2p_error(P2pError::NotFound(format!("secret code {id}"))),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+#[derive(Deserialize)]
+struct PassphraseReq {
+    passphrase: Option<String>,
+}
+
+async fn set_stealth_passphrase(
+    State(st): State<DesktopState>,
+    Json(req): Json<PassphraseReq>,
+) -> Response {
+    match st.node.set_stealth_passphrase(req.passphrase.as_deref()) {
+        Ok(configured) => Json(serde_json::json!({ "configured": configured })).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn generate_stealth_recovery(State(st): State<DesktopState>) -> Response {
+    match st.node.generate_stealth_recovery_code() {
+        Ok(code) => Json(serde_json::json!({ "recoveryCode": code })).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TestPreviewReq {
+    trigger: PrivacyTriggerKind,
+    disposable_total: usize,
+    disposable_viewed: usize,
+    #[serde(default)]
+    deletion_override: Option<LocalDeletionAction>,
+}
+
+async fn run_stealth_test_preview(
+    State(st): State<DesktopState>,
+    Json(req): Json<TestPreviewReq>,
+) -> Response {
+    let mut cfg = match st.node.stealth().get_config() {
+        Ok(c) => c,
+        Err(err) => return map_p2p_error(err),
+    };
+    cfg.enabled = true;
+    let ghost = st.node.get_ghost_policy().unwrap_or_default();
+    let ghost_mode = match req.deletion_override {
+        Some(LocalDeletionAction::DeleteActiveConversation) => {
+            cloak_p2p::GhostModeLevel::ClearOpenConversation
+        }
+        Some(LocalDeletionAction::DeleteViewedLocal)
+        | Some(LocalDeletionAction::DeleteIncomingViewedLocal)
+        | Some(LocalDeletionAction::DeleteOutgoingViewedLocal) => {
+            cloak_p2p::GhostModeLevel::ClearViewed
+        }
+        _ => ghost.mode,
+    };
+    let preview = cloak_p2p::stealth::simulate_stealth_test_mode(
+        &cfg,
+        req.trigger,
+        req.disposable_total,
+        req.disposable_viewed,
+        ghost_mode,
+        true,
+    );
+    Json(preview).into_response()
+}
+
+// ==================== Local PDF Library Routes (Decoy-Safe) ====================
+
+async fn list_pdf_docs(State(st): State<DesktopState>) -> Response {
+    match st.node.list_pdf_documents() {
+        Ok(docs) => Json(docs).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn upload_pdf_doc(
+    State(st): State<DesktopState>,
+    Query(q): Query<HashMap<String, String>>,
+    body: Bytes,
+) -> Response {
+    let filename = q
+        .get("filename")
+        .cloned()
+        .unwrap_or_else(|| "document.pdf".to_string());
+    let title = q.get("title").map(String::as_str);
+    let page_count = q
+        .get("pageCount")
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(1);
+    let make_default = q
+        .get("makeDefault")
+        .is_some_and(|v| v == "true" || v == "1");
+    match st
+        .node
+        .import_pdf_document(title, &filename, &body, page_count, make_default)
+    {
+        Ok(doc) => Json(doc).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn pick_native_pdf(State(st): State<DesktopState>) -> Response {
+    #[cfg(target_os = "windows")]
+    {
+        st.node.set_in_app_modal_open(true);
+        let paths = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Open Local PDF Document")
+                .add_filter("PDF Documents", &["pdf"])
+                .pick_files()
+        })
+        .await
+        .ok()
+        .flatten();
+        st.node.set_in_app_modal_open(false);
+
+        let Some(files) = paths else {
+            return Json(Vec::<cloak_p2p::PdfDocumentRecord>::new()).into_response();
+        };
+
+        let mut imported = Vec::new();
+        for path in files {
+            if let Ok(bytes) = tokio::fs::read(&path).await {
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("document.pdf");
+                if let Ok(doc) = st.node.import_pdf_document(None, name, &bytes, 1, false) {
+                    imported.push(doc);
+                }
+            }
+        }
+        Json(imported).into_response()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = st;
+        Json(Vec::<cloak_p2p::PdfDocumentRecord>::new()).into_response()
+    }
+}
+
+async fn create_sample_pdf_doc(State(st): State<DesktopState>) -> Response {
+    let bytes = build_valid_sample_pdf_bytes();
+    match st.node.import_pdf_document(
+        Some("Q3 Architecture & Compliance Notes"),
+        "q3-architecture-notes.pdf",
+        &bytes,
+        3,
+        false,
+    ) {
+        Ok(doc) => Json(doc).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn get_pdf_content(State(st): State<DesktopState>, Path(id): Path<String>) -> Response {
+    match st.node.read_pdf_bytes(&id) {
+        Ok(bytes) => (
+            StatusCode::OK,
+            [
+                (
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/pdf"),
+                ),
+                (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+                (
+                    header::X_CONTENT_TYPE_OPTIONS,
+                    HeaderValue::from_static("nosniff"),
+                ),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn patch_pdf_doc(
+    State(st): State<DesktopState>,
+    Path(id): Path<String>,
+    Json(patch): Json<PdfDocumentStateUpdate>,
+) -> Response {
+    match st.node.update_pdf_document_state(&id, &patch) {
+        Ok(doc) => Json(doc).into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+async fn delete_pdf_doc(State(st): State<DesktopState>, Path(id): Path<String>) -> Response {
+    match st.node.delete_pdf_document(&id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(err) => map_p2p_error(err),
+    }
+}
+
+/// Generates a minimal standards-compliant 3-page PDF 1.4 offline with searchable text on each page.
+fn build_valid_sample_pdf_bytes() -> Vec<u8> {
+    let page_texts = [
+        "Quarterly Systems Review\nSection 1: Executive Summary\nAll local storage subsystems passed quarterly integrity\nchecks and offline audit verification.\nSearch keyword: quarterly telemetry baseline.",
+        "Section 2: Storage & Encryption\nLocal caches remain segmented by workspace boundary with\ndeterministic backup rotation and hash validation.\nSection 2 confirmed zero external cloud dependencies.",
+        "Section 3: Operational Notes\nAll client workstations follow scheduled maintenance windows,\nlocal print archival, and hardware thermal monitoring.\nEnd of Q3 reference handbook.",
+    ];
+
+    let mut out = Vec::new();
+    out.extend_from_slice(b"%PDF-1.4\n");
+    let mut offsets: Vec<usize> = vec![0]; // 1-based xref objects
+
+    let mut push_obj = |body: &str| {
+        offsets.push(out.len());
+        let id = offsets.len() - 1;
+        out.extend_from_slice(format!("{id} 0 obj\n{body}\nendobj\n").as_bytes());
+    };
+
+    // 1: Catalog, 2: Pages, 3: Helvetica Font
+    push_obj("<< /Type /Catalog /Pages 2 0 R >>");
+    push_obj("<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R] /Count 3 >>");
+    push_obj("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+    for (idx, txt) in page_texts.iter().enumerate() {
+        let content_id = 5 + idx * 2;
+        push_obj(&format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>"
+        ));
+        let mut stream = String::from("BT\n/F1 18 Tf\n72 720 Td\n");
+        for (li, line) in txt.lines().enumerate() {
+            let escaped = line
+                .replace('\\', "\\\\")
+                .replace('(', "\\(")
+                .replace(')', "\\)");
+            if li == 0 {
+                stream.push_str(&format!("({escaped}) Tj\n/F1 12 Tf\n0 -32 Td\n"));
+            } else {
+                stream.push_str(&format!("({escaped}) Tj\n0 -20 Td\n"));
+            }
+        }
+        stream.push_str("ET\n");
+        push_obj(&format!(
+            "<< /Length {} >>\nstream\n{}endstream",
+            stream.len(),
+            stream
+        ));
+    }
+
+    let xref_pos = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", offsets.len()).as_bytes());
+    for off in offsets.iter().skip(1) {
+        out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n",
+            offsets.len()
+        )
+        .as_bytes(),
+    );
+    out
+}
+
 // ==================== WebSocket & Embedded Assets ====================
 
 async fn ws_events(ws: WebSocketUpgrade, State(st): State<DesktopState>) -> Response {
@@ -746,7 +1257,32 @@ async fn handle_ws(socket: WebSocket, node: P2pNode) {
     let mut rx = node.subscribe();
     let send_task = tokio::spawn(async move {
         while let Ok(ev) = rx.recv().await {
-            if let Ok(json) = serde_json::to_string(&ev)
+            let outbound = if node.is_stealth_locked() {
+                let boot = node.get_stealth_bootstrap();
+                match &ev {
+                    cloak_p2p::NodeEvent::StealthStateChanged(_) => Some(ev),
+                    cloak_p2p::NodeEvent::MessageReceived { .. }
+                    | cloak_p2p::NodeEvent::AttachmentReceived { .. } => {
+                        if matches!(
+                            boot.notification_level_now,
+                            NotificationPrivacyLevel::Disabled | NotificationPrivacyLevel::Silent
+                        ) {
+                            None
+                        } else {
+                            // Never leak plaintext/roomId/senderId over WS while Stealth Mode is locked!
+                            Some(cloak_p2p::NodeEvent::GhostStateChanged(
+                                node.get_ghost_state(),
+                            ))
+                        }
+                    }
+                    _ => None,
+                }
+            } else {
+                Some(ev)
+            };
+
+            if let Some(ev_to_send) = outbound
+                && let Ok(json) = serde_json::to_string(&ev_to_send)
                 && sender.send(Message::Text(json.into())).await.is_err()
             {
                 break;
@@ -974,5 +1510,143 @@ mod tests {
         node_b.shutdown();
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    #[tokio::test]
+    async fn stealth_locked_blocks_private_routes_until_secret_code_unlock() {
+        let dir = std::env::temp_dir().join(format!(
+            "cloak-http-stealth-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let node = P2pNode::start(&dir, "127.0.0.1:0", "StealthHttp")
+            .await
+            .unwrap();
+        let (_room, _chan, _) = node.create_room("Top Secret Ops", None).unwrap();
+        node.add_stealth_secret_code(
+            "PDF Gate",
+            "#vault-alpha",
+            cloak_p2p::SecretCodeAction::OpenMessenger,
+            None,
+            true,
+            false,
+        )
+        .unwrap();
+        let mut cfg = node.stealth().get_config().unwrap();
+        cfg.enabled = true;
+        cfg.launch_view = cloak_p2p::StealthLaunchView::PdfReader;
+        node.stealth().update_config(cfg).unwrap();
+        node.stealth()
+            .handle_trigger(cloak_p2p::PrivacyTriggerKind::ManualLock)
+            .unwrap();
+        assert!(node.is_stealth_locked());
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let tok = "tok-stealth-http".to_string();
+        let app = build_router(DesktopState {
+            node: node.clone(),
+            data_dir: dir.clone(),
+            session_token: tok.clone(),
+            expected_http_port: Arc::new(AtomicU16::new(addr.port())),
+        });
+        let srv = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let client = reqwest::Client::new();
+
+        // While locked, ALL private routes MUST return 403 STEALTH_LOCKED with zero leakage
+        for path in [
+            "/p2p/v1/status",
+            "/p2p/v1/rooms",
+            "/p2p/v1/peers",
+            "/p2p/v1/stealth/settings",
+            "/p2p/v1/stealth/codes",
+            "/p2p/v1/ghost/policy",
+        ] {
+            let resp = client
+                .get(format!("http://{addr}{path}"))
+                .bearer_auth(&tok)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN, "path {path}");
+            let body = resp.text().await.unwrap();
+            assert!(body.contains("STEALTH_LOCKED"));
+            assert!(!body.contains("Top Secret Ops"));
+        }
+
+        // Bootstrap & PDF endpoints MUST remain available cleanly while locked
+        let boot: serde_json::Value = client
+            .get(format!("http://{addr}/p2p/v1/stealth/bootstrap"))
+            .bearer_auth(&tok)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(boot["locked"], true);
+        assert_eq!(boot["activeSurface"], "pdf_reader");
+
+        let sample_pdf = client
+            .post(format!("http://{addr}/p2p/v1/pdf/documents/sample"))
+            .bearer_auth(&tok)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(sample_pdf.status(), reqwest::StatusCode::OK);
+
+        // Unlock with valid user-defined secret code via pdf_search -> private routes reopen!
+        let unlock: serde_json::Value = client
+            .post(format!("http://{addr}/p2p/v1/stealth/unlock"))
+            .bearer_auth(&tok)
+            .json(&serde_json::json!({
+                "method": "pdf_search",
+                "secret": "#vault-alpha"
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(unlock["unlocked"], true);
+
+        let rooms_resp = client
+            .get(format!("http://{addr}/p2p/v1/rooms"))
+            .bearer_auth(&tok)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(rooms_resp.status(), reqwest::StatusCode::OK);
+        let rooms_txt = rooms_resp.text().await.unwrap();
+        assert!(rooms_txt.contains("Top Secret Ops"));
+
+        // Trigger ManualLock -> 403 STEALTH_LOCKED re-engages immediately
+        let lock_resp = client
+            .post(format!("http://{addr}/p2p/v1/stealth/trigger"))
+            .bearer_auth(&tok)
+            .json(&serde_json::json!({ "trigger": "manual_lock" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(lock_resp.status(), reqwest::StatusCode::OK);
+
+        let relocked = client
+            .get(format!("http://{addr}/p2p/v1/rooms"))
+            .bearer_auth(&tok)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(relocked.status(), reqwest::StatusCode::FORBIDDEN);
+
+        srv.abort();
+        node.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

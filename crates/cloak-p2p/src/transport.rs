@@ -28,6 +28,11 @@ use crate::model::{
     StoredMessage, TombstoneScope, WebRtcSignalPayload, WireFrame,
 };
 use crate::netinfo::{collect_network_diagnostics, enumerate_interface_candidates};
+use crate::stealth::{
+    PdfDocumentRecord, PdfDocumentStateUpdate, PrivacyTriggerKind, SecretCodeAction,
+    SecretCodeMetadata, StealthBootstrapState,
+};
+use crate::stealth_controller::StealthController;
 use crate::storage::LocalVault;
 
 const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
@@ -39,7 +44,7 @@ type ActivePeersMap = Arc<RwLock<HashMap<String, mpsc::Sender<WireFrame>>>>;
 type PeerStatesMap = Arc<RwLock<HashMap<String, PeerConnectionState>>>;
 
 /// High-level local-first P2P desktop node combining SQLite persistence, direct encrypted TCP transport,
-/// and authoritative Rust-side Ghost Mode privacy state management.
+/// and authoritative Rust-side Ghost & Stealth Mode privacy state management.
 #[derive(Clone)]
 pub struct P2pNode {
     vault: Arc<Mutex<LocalVault>>,
@@ -47,6 +52,7 @@ pub struct P2pNode {
     active_peers: ActivePeersMap,
     peer_states: PeerStatesMap,
     ghost_state: Arc<Mutex<GhostRuntimeState>>,
+    stealth: StealthController,
     events: broadcast::Sender<NodeEvent>,
     shutdown_tx: Arc<tokio::sync::watch::Sender<bool>>,
 }
@@ -74,12 +80,16 @@ impl P2pNode {
         let (events, _) = broadcast::channel(512);
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
+        let vault_arc = Arc::new(Mutex::new(vault));
+        let stealth = StealthController::new(vault_arc.clone(), events.clone());
+
         let node = Self {
-            vault: Arc::new(Mutex::new(vault)),
+            vault: vault_arc,
             local_addr,
             active_peers: Arc::new(RwLock::new(HashMap::new())),
             peer_states: Arc::new(RwLock::new(HashMap::new())),
             ghost_state: Arc::new(Mutex::new(initial_ghost)),
+            stealth,
             events,
             shutdown_tx: Arc::new(shutdown_tx),
         };
@@ -115,18 +125,22 @@ impl P2pNode {
             }
         });
 
-        // Background auto-reconnect & disappearing TTL purge loop
+        // Background auto-reconnect, disappearing TTL purge, & Stealth timer loop
         let bg_node = node.clone();
         let mut bg_shutdown = shutdown_rx;
         tokio::spawn(async move {
             let mut reconnect_interval = tokio::time::interval(Duration::from_secs(12));
             let mut ttl_interval = tokio::time::interval(Duration::from_secs(2));
+            let mut stealth_interval = tokio::time::interval(Duration::from_millis(500));
             loop {
                 tokio::select! {
                     _ = bg_shutdown.changed() => {
                         if *bg_shutdown.borrow() {
                             break;
                         }
+                    }
+                    _ = stealth_interval.tick() => {
+                        let _ = bg_node.stealth.tick_timers();
                     }
                     _ = ttl_interval.tick() => {
                         let purged = {
@@ -246,6 +260,101 @@ impl P2pNode {
             .create_room(None, name, None, default_disappear_seconds)
     }
 
+    // ==================== Stealth Mode & PDF Library ====================
+
+    pub fn stealth(&self) -> &StealthController {
+        &self.stealth
+    }
+
+    pub fn is_stealth_locked(&self) -> bool {
+        self.stealth.is_locked()
+    }
+
+    pub fn get_stealth_bootstrap(&self) -> StealthBootstrapState {
+        self.stealth.bootstrap_state()
+    }
+
+    pub fn add_stealth_secret_code(
+        &self,
+        label: &str,
+        raw_code: &str,
+        action: SecretCodeAction,
+        target_room_id: Option<&str>,
+        case_sensitive: bool,
+        require_additional_auth: bool,
+    ) -> P2pResult<SecretCodeMetadata> {
+        self.vault.lock().unwrap().add_secret_code(
+            label,
+            raw_code,
+            action,
+            target_room_id,
+            case_sensitive,
+            require_additional_auth,
+        )
+    }
+
+    pub fn list_stealth_secret_codes(&self) -> P2pResult<Vec<SecretCodeMetadata>> {
+        self.vault.lock().unwrap().list_secret_code_metadata()
+    }
+
+    pub fn remove_stealth_secret_code(&self, id: &str) -> P2pResult<bool> {
+        self.vault.lock().unwrap().remove_secret_code(id)
+    }
+
+    pub fn set_stealth_passphrase(&self, passphrase: Option<&str>) -> P2pResult<bool> {
+        self.vault
+            .lock()
+            .unwrap()
+            .set_stealth_passphrase(passphrase)
+    }
+
+    pub fn generate_stealth_recovery_code(&self) -> P2pResult<String> {
+        self.vault
+            .lock()
+            .unwrap()
+            .generate_and_store_recovery_code()
+    }
+
+    pub fn import_pdf_document(
+        &self,
+        title: Option<&str>,
+        filename: &str,
+        bytes: &[u8],
+        page_count: u32,
+        make_default: bool,
+    ) -> P2pResult<PdfDocumentRecord> {
+        self.vault.lock().unwrap().import_pdf_document(
+            title,
+            filename,
+            bytes,
+            page_count,
+            make_default,
+        )
+    }
+
+    pub fn list_pdf_documents(&self) -> P2pResult<Vec<PdfDocumentRecord>> {
+        self.vault.lock().unwrap().list_pdf_documents()
+    }
+
+    pub fn read_pdf_bytes(&self, doc_id: &str) -> P2pResult<Vec<u8>> {
+        self.vault.lock().unwrap().read_pdf_bytes(doc_id)
+    }
+
+    pub fn update_pdf_document_state(
+        &self,
+        doc_id: &str,
+        patch: &PdfDocumentStateUpdate,
+    ) -> P2pResult<PdfDocumentRecord> {
+        self.vault
+            .lock()
+            .unwrap()
+            .update_pdf_document_state(doc_id, patch)
+    }
+
+    pub fn delete_pdf_document(&self, doc_id: &str) -> P2pResult<()> {
+        self.vault.lock().unwrap().delete_pdf_document(doc_id)
+    }
+
     // ==================== Authoritative Ghost Mode Controller ====================
 
     pub fn get_ghost_policy(&self) -> P2pResult<GhostPolicy> {
@@ -315,6 +424,7 @@ impl P2pNode {
     }
 
     pub fn set_in_app_modal_open(&self, open: bool) -> GhostRuntimeState {
+        self.stealth.set_modal_open(open);
         let mut st = self.ghost_state.lock().unwrap();
         if open {
             st.in_app_modal_depth = st.in_app_modal_depth.saturating_add(1);
@@ -366,6 +476,7 @@ impl P2pNode {
                 .flatten()
         });
         let (eff_enabled, eff_mode, _) = resolve_effective_mode(&policy, room_override.as_ref());
+        self.stealth.set_active_conversation(room_id, channel_id);
 
         let snapshot = {
             let mut st = self.ghost_state.lock().unwrap();
@@ -389,7 +500,13 @@ impl P2pNode {
         message_ids: &[String],
     ) -> P2pResult<usize> {
         let st = self.ghost_state.lock().unwrap().clone();
-        if st.shielded || st.pin_locked || !st.window_focused || st.minimized || st.session_locked {
+        if st.shielded
+            || st.pin_locked
+            || !st.window_focused
+            || st.minimized
+            || st.session_locked
+            || self.stealth.is_locked()
+        {
             return Ok(0);
         }
         self.vault
@@ -423,6 +540,41 @@ impl P2pNode {
 
     /// Processes a native Win32 or lifecycle privacy trigger atomically in Rust.
     pub fn handle_ghost_trigger(&self, kind: GhostTriggerKind) -> P2pResult<GhostRuntimeState> {
+        if self
+            .stealth
+            .get_config()
+            .map(|c| c.enabled)
+            .unwrap_or(false)
+        {
+            let mapped = match kind {
+                GhostTriggerKind::ExternalFocusLoss => Some(PrivacyTriggerKind::FocusLoss),
+                GhostTriggerKind::Minimize => Some(PrivacyTriggerKind::Minimize),
+                GhostTriggerKind::SessionLock => Some(PrivacyTriggerKind::SessionLock),
+                GhostTriggerKind::AppClose => Some(PrivacyTriggerKind::WindowClose),
+                GhostTriggerKind::ManualLock => Some(PrivacyTriggerKind::ManualLock),
+                GhostTriggerKind::RestoreFocus => {
+                    let _ = self.stealth.notify_window_focus_restored(false);
+                    None
+                }
+                GhostTriggerKind::Unlock => None,
+            };
+            if let Some(st_trig) = mapped {
+                let boot = self.stealth.handle_trigger(st_trig)?;
+                let mut st = self.ghost_state.lock().unwrap();
+                st.shielded = boot.locked;
+                st.pin_locked = boot.locked;
+                st.window_focused = !matches!(
+                    kind,
+                    GhostTriggerKind::ExternalFocusLoss
+                        | GhostTriggerKind::Minimize
+                        | GhostTriggerKind::SessionLock
+                );
+                st.minimized = matches!(kind, GhostTriggerKind::Minimize);
+                st.session_locked = matches!(kind, GhostTriggerKind::SessionLock);
+                return Ok(st.clone());
+            }
+        }
+
         let policy = self.get_ghost_policy()?;
         let current_state = self.ghost_state.lock().unwrap().clone();
         let room_override = current_state.active_room_id.as_deref().and_then(|rid| {

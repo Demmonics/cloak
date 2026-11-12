@@ -20,10 +20,13 @@ use crate::model::{
     OutgoingViewedPolicy, PeerSummary, StoredMessage, TombstoneScope, WireFrame,
 };
 
+use crate::stealth::LocalDeletionAction;
+
 /// Local-first SQLite + filesystem attachment vault backing every desktop P2P node.
 pub struct LocalVault {
-    conn: Connection,
+    pub(crate) conn: Connection,
     blobs_dir: PathBuf,
+    pub(crate) pdfs_dir: PathBuf,
     vault_box: VaultSecretBox,
 }
 
@@ -34,6 +37,8 @@ impl LocalVault {
         std::fs::create_dir_all(data_dir)?;
         let blobs_dir = data_dir.join("blobs");
         std::fs::create_dir_all(&blobs_dir)?;
+        let pdfs_dir = data_dir.join("pdfs");
+        std::fs::create_dir_all(&pdfs_dir)?;
         let vault_box = VaultSecretBox::load_or_create(data_dir)?;
 
         let db_path = data_dir.join("cloak_local.db");
@@ -224,8 +229,11 @@ impl LocalVault {
         let vault = Self {
             conn,
             blobs_dir,
+            pdfs_dir,
             vault_box,
         };
+
+        vault.init_stealth_schema()?;
 
         // Ensure default safe Ghost Mode policy row exists (Ghost Mode OFF on new install)
         let ghost_exists: Option<i64> = vault
@@ -1101,6 +1109,64 @@ impl LocalVault {
         Ok(rows.len())
     }
 
+    /// Executes a local-only scoped Ghost/Stealth deletion (`KeepAll` is a no-op).
+    pub fn execute_local_deletion(
+        &self,
+        room_id: &str,
+        channel_id: &str,
+        action: LocalDeletionAction,
+        clear_attachments: bool,
+    ) -> P2pResult<GhostDeletionSummary> {
+        match action {
+            LocalDeletionAction::KeepAll => Ok(make_cleanup_summary(
+                room_id.to_string(),
+                channel_id.to_string(),
+                GhostModeLevel::PrivacyShield,
+                0,
+                0,
+                0,
+            )),
+            LocalDeletionAction::DeleteActiveConversation => self.execute_ghost_clear(
+                room_id,
+                channel_id,
+                GhostModeLevel::ClearOpenConversation,
+                clear_attachments,
+            ),
+            LocalDeletionAction::DeleteViewedLocal => self.execute_ghost_clear(
+                room_id,
+                channel_id,
+                GhostModeLevel::ClearViewed,
+                clear_attachments,
+            ),
+            LocalDeletionAction::DeleteIncomingViewedLocal
+            | LocalDeletionAction::DeleteOutgoingViewedLocal => {
+                let intent_id = Uuid::new_v4().to_string();
+                let mode_str = serde_json::to_string(&GhostModeLevel::ClearViewed)?;
+                self.conn.execute(
+                    "INSERT INTO deletion_intents (id, room_id, channel_id, mode, clear_attachments, status, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)",
+                    params![
+                        intent_id,
+                        room_id,
+                        channel_id,
+                        mode_str,
+                        if clear_attachments { 1 } else { 0 },
+                        Utc::now().to_rfc3339(),
+                    ],
+                )?;
+                let filter_outgoing_only = action == LocalDeletionAction::DeleteOutgoingViewedLocal;
+                let summary = self.apply_scoped_viewed_deletion(
+                    &intent_id,
+                    room_id,
+                    channel_id,
+                    clear_attachments,
+                    Some(filter_outgoing_only),
+                )?;
+                Ok(summary)
+            }
+        }
+    }
+
     /// Executes an atomic local-only Ghost Mode wipe (preserving identity, peer pairings, other channels, and remote peer's copy).
     pub fn execute_ghost_clear(
         &self,
@@ -1141,6 +1207,76 @@ impl LocalVault {
         let summary =
             self.apply_deletion_intent(&intent_id, room_id, channel_id, mode, clear_attachments)?;
         Ok(summary)
+    }
+
+    fn apply_scoped_viewed_deletion(
+        &self,
+        intent_id: &str,
+        room_id: &str,
+        channel_id: &str,
+        clear_attachments: bool,
+        outgoing_only_opt: Option<bool>,
+    ) -> P2pResult<GhostDeletionSummary> {
+        let local_dev = self.identity()?.device_id;
+        let now = Utc::now().to_rfc3339();
+        let mut att_candidates = HashSet::new();
+        let mut deleted_messages = 0usize;
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id, sender_device_id, attachment_ids_json FROM messages
+             WHERE room_id = ?1 AND channel_id = ?2 AND viewed_at IS NOT NULL",
+        )?;
+        let viewed_rows: Vec<(String, String, String)> = stmt
+            .query_map(params![room_id, channel_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        for (mid, sender, att_json) in viewed_rows {
+            if let Some(outgoing_only) = outgoing_only_opt {
+                let is_out = sender == local_dev;
+                if outgoing_only != is_out {
+                    continue;
+                }
+            }
+            if let Ok(aids) = serde_json::from_str::<Vec<String>>(&att_json) {
+                att_candidates.extend(aids);
+            }
+            self.conn.execute(
+                "INSERT OR IGNORE INTO local_suppressions (id, room_id, channel_id, message_id, kind, created_at)
+                 VALUES (?1, ?2, ?3, ?4, 'message_id', ?5)",
+                params![Uuid::new_v4().to_string(), room_id, channel_id, mid, now],
+            )?;
+            self.conn
+                .execute("DELETE FROM messages WHERE id = ?1", params![mid])?;
+            deleted_messages += 1;
+        }
+
+        let deleted_attachments = if clear_attachments {
+            self.cleanup_orphan_attachments(att_candidates)?
+        } else {
+            0
+        };
+        let preserved_unread: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE room_id = ?1 AND channel_id = ?2 AND deleted_for_me = 0 AND deleted_for_everyone = 0",
+            params![room_id, channel_id],
+            |r| r.get(0),
+        )?;
+        self.conn.execute(
+            "UPDATE deletion_intents SET status = 'completed' WHERE id = ?1",
+            params![intent_id],
+        )?;
+        let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+
+        Ok(make_cleanup_summary(
+            room_id.to_string(),
+            channel_id.to_string(),
+            GhostModeLevel::ClearViewed,
+            deleted_messages,
+            deleted_attachments,
+            preserved_unread as usize,
+        ))
     }
 
     fn recover_pending_deletion_intents(&self) -> P2pResult<usize> {

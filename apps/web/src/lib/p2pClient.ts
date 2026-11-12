@@ -198,7 +198,268 @@ export type P2pNodeEvent =
   | { event: 'history_changed'; room_id: string; scope: string }
   | { event: 'attachment_received'; room_id: string; attachment_id: string; filename: string }
   | ({ event: 'web_rtc_signal' } & P2pWebRtcSignal)
-  | ({ event: 'ghost_state_changed' } & P2pGhostRuntimeState);
+  | ({ event: 'ghost_state_changed' } & P2pGhostRuntimeState)
+  | ({ event: 'stealth_state_changed' } & P2pStealthBootstrapState);
+
+// ==================== Phase 10: Stealth Mode & PDF Decoy Types ====================
+
+export type StealthLaunchView = 'messenger' | 'pdf_reader';
+export type StealthVisualAction =
+  | 'none'
+  | 'blur'
+  | 'privacy_shield'
+  | 'lock_screen'
+  | 'switch_to_pdf'
+  | 'switch_to_selected_pdf'
+  | 'generic_document_list';
+export type StealthPdfReturnBehavior =
+  | 'last_opened'
+  | 'document_library'
+  | 'configured_default'
+  | 'neutral_welcome';
+export type PdfReaderTheme = 'light' | 'dark';
+export type UnlockMethod =
+  | 'pdf_search'
+  | 'hidden_shortcut_input'
+  | 'discreet_command'
+  | 'passphrase'
+  | 'pin'
+  | 'windows_hello';
+export type SecretCodeAction =
+  | 'open_messenger'
+  | 'open_conversation'
+  | 'open_privacy_settings'
+  | 'return_to_pdf'
+  | 'panic_lock';
+export type PrivacyTriggerKind =
+  | 'focus_loss'
+  | 'alt_tab'
+  | 'click_other_app'
+  | 'minimize'
+  | 'show_desktop'
+  | 'virtual_desktop_switch'
+  | 'session_lock'
+  | 'session_unlock'
+  | 'restore_taskbar'
+  | 'restore_tray'
+  | 'window_close'
+  | 'app_restart'
+  | 'background_away_timeout'
+  | 'foreground_inactivity'
+  | 'system_idle'
+  | 'panic_hotkey'
+  | 'manual_lock'
+  | 'manual_switch_to_pdf';
+export type LocalDeletionAction =
+  | 'keep_all'
+  | 'delete_incoming_viewed_local'
+  | 'delete_outgoing_viewed_local'
+  | 'delete_viewed_local'
+  | 'delete_active_conversation';
+export type AttachmentPurgeAction = 'keep' | 'purge_related';
+export type LockAction = 'none' | 'require_unlock' | 'hard_lock';
+export type VoiceCallAction = 'continue' | 'auto_mute' | 'end_call' | 'ask_before_ending';
+export type CameraAction = 'continue' | 'disable_camera' | 'end_video_stream';
+export type ScreenShareAction = 'continue' | 'pause' | 'stop_immediately' | 'ask_if_visible';
+export type NotificationPrivacyLevel =
+  | 'full_preview'
+  | 'sender_only'
+  | 'generic_notice'
+  | 'silent'
+  | 'disabled';
+export type ActiveSurface =
+  | 'messenger'
+  | 'pdf_reader'
+  | 'privacy_shield'
+  | 'lock_screen'
+  | 'generic_doc_list';
+
+export interface NotificationPrivacySettings {
+  unlockedLevel: NotificationPrivacyLevel;
+  pdfModeLevel: NotificationPrivacyLevel;
+  windowsLockedLevel: NotificationPrivacyLevel;
+  minimizedLevel: NotificationPrivacyLevel;
+  screenSharingLevel: NotificationPrivacyLevel;
+  dndLevel: NotificationPrivacyLevel;
+  dndEnabled: boolean;
+  suppressTaskbarBadge: boolean;
+  suppressTrayPreview: boolean;
+  suppressSounds: boolean;
+  hideContactNames: boolean;
+  hideAttachmentThumbnails: boolean;
+}
+
+export interface CallPrivacySettings {
+  voiceAction: VoiceCallAction;
+  cameraAction: CameraAction;
+  screenShareAction: ScreenShareAction;
+  showCallIndicatorInPdf: boolean;
+}
+
+export interface PdfReaderSettings {
+  restoreLastDocument: boolean;
+  returnBehavior: StealthPdfReturnBehavior;
+  defaultDocumentId: string | null;
+  theme: PdfReaderTheme;
+  neutralWindowTitle: string;
+  enableImport: boolean;
+  enableSearch: boolean;
+  enableTabs: boolean;
+}
+
+export interface UnlockPreferences {
+  enabledMethods: UnlockMethod[];
+  caseSensitive: boolean;
+  requireAdditionalAuth: boolean;
+  allowMultipleCodes: boolean;
+  hiddenShortcut: string;
+  panicShortcut: string;
+  requireUnlockOnReturn: boolean;
+  lockOnRestart: boolean;
+}
+
+export interface TimerPreferences {
+  backgroundAwayEnabled: boolean;
+  backgroundAwaySeconds: number;
+  backgroundAwayCancelOnReturn: boolean;
+  backgroundAwayPreserveDeadline: boolean;
+  backgroundAwayDeletion: LocalDeletionAction;
+  foregroundIdleEnabled: boolean;
+  foregroundIdleSeconds: number;
+  systemIdleEnabled: boolean;
+  systemIdleSeconds: number;
+}
+
+export interface PrivacyRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  trigger: PrivacyTriggerKind;
+  delaySeconds: number;
+  cancelOnReturn: boolean;
+  preserveAbsoluteDeadline: boolean;
+  visualAction: StealthVisualAction;
+  lockAction: LockAction;
+  deletionAction: LocalDeletionAction;
+  attachmentAction: AttachmentPurgeAction;
+  notificationAction: NotificationPrivacyLevel | null;
+  voiceAction: VoiceCallAction | null;
+  cameraAction: CameraAction | null;
+  screenShareAction: ScreenShareAction | null;
+  scopeRoomId: string | null;
+  priority: number;
+}
+
+export interface P2pStealthConfig {
+  enabled: boolean;
+  launchView: StealthLaunchView;
+  stealthVisualAction: StealthVisualAction;
+  unlock: UnlockPreferences;
+  pdfReader: PdfReaderSettings;
+  timers: TimerPreferences;
+  calls: CallPrivacySettings;
+  notifications: NotificationPrivacySettings;
+  triggerOnAltTab: boolean;
+  triggerOnClickOtherApp: boolean;
+  triggerOnFocusLoss: boolean;
+  triggerOnMinimize: boolean;
+  triggerOnShowDesktop: boolean;
+  triggerOnVirtualDesktop: boolean;
+  triggerOnSessionLock: boolean;
+  triggerOnWindowClose: boolean;
+  triggerOnRestart: boolean;
+  rules: PrivacyRule[];
+}
+
+export interface ActiveCallPrivacySummary {
+  inCall: boolean;
+  micActive: boolean;
+  micMuted: boolean;
+  cameraActive: boolean;
+  screenSharingActive: boolean;
+}
+
+export interface P2pStealthBootstrapState {
+  stealthEnabled: boolean;
+  locked: boolean;
+  lifecycleState: string;
+  activeSurface: ActiveSurface;
+  visualAction: StealthVisualAction;
+  launchView: StealthLaunchView;
+  pdfReturnBehavior: StealthPdfReturnBehavior;
+  defaultPdfId: string | null;
+  pdfTheme: PdfReaderTheme;
+  windowTitle: string;
+  enabledUnlockMethods: UnlockMethod[];
+  requireAdditionalAuth: boolean;
+  hasPassphraseConfigured: boolean;
+  hasPinConfigured: boolean;
+  hiddenShortcut: string;
+  panicShortcut: string;
+  lockoutRemainingSeconds: number;
+  failedAttempts: number;
+  windowsHelloAvailable: boolean;
+  windowsHelloStatus: string;
+  callSummary: ActiveCallPrivacySummary;
+  notificationLevelNow: NotificationPrivacyLevel;
+  awayDeadlineMs: number | null;
+  awayRemainingSeconds: number | null;
+  foregroundIdleRemainingSeconds: number | null;
+  systemIdleSeconds: number;
+  pendingNavigationTarget: string | null;
+  pendingOpenPrivacySettings: boolean;
+}
+
+export interface P2pSecretCodeMeta {
+  id: string;
+  label: string;
+  action: SecretCodeAction;
+  targetRoomId: string | null;
+  caseSensitive: boolean;
+  isWeak: boolean;
+  requireAdditionalAuth: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface P2pUnlockOutcome {
+  matched: boolean;
+  unlocked: boolean;
+  action: SecretCodeAction | null;
+  targetRoomId: string | null;
+  openPrivacySettings: boolean;
+  needsAdditionalFactor: boolean;
+  lockoutRemainingSeconds: number;
+  message: string;
+  bootstrap: P2pStealthBootstrapState;
+}
+
+export interface P2pPdfDocument {
+  id: string;
+  title: string;
+  filename: string;
+  fileSizeBytes: number;
+  pageCount: number;
+  sha256Hex: string;
+  lastPage: number;
+  lastZoom: number;
+  rotation: number;
+  bookmarks: number[];
+  isDefaultDecoy: boolean;
+  lastOpenedAt: string | null;
+  addedAt: string;
+}
+
+export interface P2pStealthTestPreviewResult {
+  trigger: PrivacyTriggerKind;
+  resultingSurface: ActiveSurface;
+  wouldLock: boolean;
+  wouldDeleteMessages: boolean;
+  deletionPolicy: LocalDeletionAction;
+  disposableMessagesRemaining: number;
+  disposableMessagesCleared: number;
+  note: string;
+}
 
 declare global {
   interface Window {
@@ -447,22 +708,182 @@ export const p2pApi = {
       method: 'POST',
       body: JSON.stringify({ roomId }),
     }),
+  // Phase 10 Stealth Mode & PDF Library
+  getStealthBootstrap: () => p2pRequest<P2pStealthBootstrapState>('/stealth/bootstrap'),
+  unlockStealth: (method: UnlockMethod, secret: string, additionalSecret?: string) =>
+    p2pRequest<P2pUnlockOutcome>('/stealth/unlock', {
+      method: 'POST',
+      body: JSON.stringify({ method, secret, additionalSecret: additionalSecret ?? null }),
+    }),
+  recoverStealth: (recoveryCode: string) =>
+    p2pRequest<P2pUnlockOutcome>('/stealth/recover', {
+      method: 'POST',
+      body: JSON.stringify({ recoveryCode }),
+    }),
+  triggerStealth: (trigger: PrivacyTriggerKind) =>
+    p2pRequest<P2pStealthBootstrapState>('/stealth/trigger', {
+      method: 'POST',
+      body: JSON.stringify({ trigger }),
+    }),
+  recordForegroundActivity: () =>
+    p2pRequest<void>('/stealth/foreground-activity', { method: 'POST' }),
+  reportSystemIdleMs: (idleMs: number) =>
+    p2pRequest<P2pStealthBootstrapState>('/stealth/system-idle', {
+      method: 'POST',
+      body: JSON.stringify({ idleMs }),
+    }),
+  updateStealthCallSummary: (summary: ActiveCallPrivacySummary) =>
+    p2pRequest<P2pStealthBootstrapState>('/stealth/call-summary', {
+      method: 'POST',
+      body: JSON.stringify(summary),
+    }),
+  returnToMessengerIfUnlocked: () =>
+    p2pRequest<P2pStealthBootstrapState>('/stealth/return-messenger', { method: 'POST' }),
+  advanceStealthClockMs: (deltaMs: number) =>
+    p2pRequest<P2pStealthBootstrapState>('/stealth/test-clock-advance', {
+      method: 'POST',
+      body: JSON.stringify({ deltaMs }),
+    }),
+  getStealthSettings: () => p2pRequest<P2pStealthConfig>('/stealth/settings'),
+  updateStealthSettings: (cfg: P2pStealthConfig) =>
+    p2pRequest<P2pStealthConfig>('/stealth/settings', {
+      method: 'PUT',
+      body: JSON.stringify(cfg),
+    }),
+  listSecretCodes: () => p2pRequest<P2pSecretCodeMeta[]>('/stealth/codes'),
+  createSecretCode: (payload: {
+    label: string;
+    code: string;
+    action: SecretCodeAction;
+    targetRoomId?: string | null;
+    caseSensitive?: boolean;
+    requireAdditionalAuth?: boolean;
+  }) =>
+    p2pRequest<P2pSecretCodeMeta>('/stealth/codes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteSecretCode: (id: string) =>
+    p2pRequest<void>(`/stealth/codes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  setStealthPassphrase: (passphrase: string | null) =>
+    p2pRequest<{ configured: boolean }>('/stealth/passphrase', {
+      method: 'POST',
+      body: JSON.stringify({ passphrase }),
+    }),
+  generateRecoveryCode: () =>
+    p2pRequest<{ recoveryCode: string }>('/stealth/recovery-code', { method: 'POST' }),
+  runStealthTestPreview: (payload: {
+    trigger: PrivacyTriggerKind;
+    disposableTotal: number;
+    disposableViewed: number;
+    deletionOverride?: LocalDeletionAction | null;
+  }) =>
+    p2pRequest<P2pStealthTestPreviewResult>('/stealth/test-preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  // Local PDF Reader Documents
+  listPdfDocuments: () => p2pRequest<P2pPdfDocument[]>('/pdf/documents'),
+  uploadPdfDocument: async (
+    file: File,
+    opts?: { title?: string; pageCount?: number; makeDefault?: boolean },
+  ): Promise<P2pPdfDocument> => {
+    const buf = await file.arrayBuffer();
+    const q = new URLSearchParams({
+      filename: file.name || 'document.pdf',
+      ...(opts?.title ? { title: opts.title } : {}),
+      ...(opts?.pageCount ? { pageCount: String(opts.pageCount) } : {}),
+      ...(opts?.makeDefault ? { makeDefault: 'true' } : {}),
+    });
+    const resp = await fetch(`/p2p/v1/pdf/documents?${q.toString()}`, {
+      method: 'POST',
+      headers: buildAuthHeaders(),
+      body: buf,
+    });
+    if (!resp.ok) {
+      let msg = `PDF import failed (${resp.status})`;
+      try {
+        const j = (await resp.json()) as { error?: string };
+        if (j.error) msg = j.error;
+      } catch {
+        // Ignore
+      }
+      throw new P2pApiError(resp.status, 'PDF_IMPORT_FAILED', msg);
+    }
+    return (await resp.json()) as P2pPdfDocument;
+  },
+  pickNativePdfDocuments: () =>
+    p2pRequest<P2pPdfDocument[]>('/pdf/documents/pick', { method: 'POST' }),
+  createSamplePdfDocument: () =>
+    p2pRequest<P2pPdfDocument>('/pdf/documents/sample', { method: 'POST' }),
+  fetchPdfContentBytes: async (docId: string): Promise<Uint8Array> => {
+    const resp = await fetch(`/p2p/v1/pdf/documents/${encodeURIComponent(docId)}/content`, {
+      headers: buildAuthHeaders(),
+    });
+    if (!resp.ok) {
+      throw new P2pApiError(resp.status, 'PDF_FETCH_FAILED', `PDF read failed (${resp.status})`);
+    }
+    return new Uint8Array(await resp.arrayBuffer());
+  },
+  updatePdfDocumentState: (
+    docId: string,
+    patch: Partial<{
+      pageCount: number;
+      lastPage: number;
+      lastZoom: number;
+      rotation: number;
+      bookmarks: number[];
+      isDefaultDecoy: boolean;
+    }>,
+  ) =>
+    p2pRequest<P2pPdfDocument>(`/pdf/documents/${encodeURIComponent(docId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deletePdfDocument: (docId: string) =>
+    p2pRequest<void>(`/pdf/documents/${encodeURIComponent(docId)}`, { method: 'DELETE' }),
 };
 
 export function connectP2pEvents(onEvent: (ev: P2pNodeEvent) => void): () => void {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const tok = getP2pSessionToken();
-  const q = tok ? `?token=${encodeURIComponent(tok)}` : '';
-  const ws = new WebSocket(`${proto}//${window.location.host}/p2p/v1/ws${q}`);
-  ws.onmessage = (msg) => {
-    try {
-      const parsed = JSON.parse(String(msg.data)) as P2pNodeEvent;
-      onEvent(parsed);
-    } catch {
-      // Ignore malformed frame
-    }
+  let disposed = false;
+  let ws: WebSocket | null = null;
+  let retryTimer: number | null = null;
+  let attempt = 0;
+
+  const connect = () => {
+    if (disposed) return;
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const tok = getP2pSessionToken();
+    const q = tok ? `?token=${encodeURIComponent(tok)}` : '';
+    const socket = new WebSocket(`${proto}//${window.location.host}/p2p/v1/ws${q}`);
+    ws = socket;
+    socket.onopen = () => {
+      attempt = 0;
+    };
+    socket.onmessage = (msg) => {
+      try {
+        const parsed = JSON.parse(String(msg.data)) as P2pNodeEvent;
+        onEvent(parsed);
+      } catch {
+        // Ignore malformed frame
+      }
+    };
+    socket.onclose = () => {
+      if (disposed) return;
+      const delay = Math.min(3000, 400 * Math.max(1, 2 ** attempt));
+      attempt = Math.min(attempt + 1, 4);
+      retryTimer = window.setTimeout(connect, delay);
+    };
   };
+
+  connect();
   return () => {
-    ws.close();
+    disposed = true;
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    ws?.close();
+    ws = null;
   };
 }

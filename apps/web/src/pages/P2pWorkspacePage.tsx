@@ -7,6 +7,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  FileText,
   Flame,
   Hash,
   Link2,
@@ -30,6 +31,8 @@ import {
 import { DISAPPEARING_MESSAGE_OPTIONS } from '@cloak/config';
 import { Button, ModalDialog } from '@cloak/ui';
 import { P2pGhostSettingsModal } from '../components/p2p/P2pGhostSettingsModal.js';
+import { PdfReaderShell } from '../components/pdf/PdfReaderShell.js';
+import { P2pStealthSettingsModal } from '../components/stealth/P2pStealthSettingsModal.js';
 import {
   P2pMediaDock,
   SCREEN_PRESETS,
@@ -52,9 +55,14 @@ import {
   type P2pMessageView,
   type P2pNetworkDiagnostics,
   type P2pNodeStatus,
+  type P2pPdfDocument,
   type P2pPeerSummary,
   type P2pRoom,
+  type P2pStealthBootstrapState,
+  type P2pStealthConfig,
+  type P2pUnlockOutcome,
   type P2pWebRtcSignal,
+  type UnlockMethod,
 } from '../lib/p2pClient.js';
 import {
   escapeHtmlText,
@@ -106,6 +114,73 @@ const DEFAULT_GHOST_POLICY: P2pGhostPolicy = {
   outgoingViewedPolicy: 'immediate_after_dwell',
 };
 
+const DEFAULT_STEALTH_CONFIG: P2pStealthConfig = {
+  enabled: false,
+  launchView: 'messenger',
+  stealthVisualAction: 'switch_to_pdf',
+  unlock: {
+    enabledMethods: ['pdf_search', 'hidden_shortcut_input', 'discreet_command'],
+    caseSensitive: true,
+    requireAdditionalAuth: false,
+    allowMultipleCodes: true,
+    hiddenShortcut: 'Ctrl+Shift+U',
+    panicShortcut: 'Ctrl+Shift+L',
+    requireUnlockOnReturn: true,
+    lockOnRestart: true,
+  },
+  pdfReader: {
+    restoreLastDocument: true,
+    returnBehavior: 'last_opened',
+    defaultDocumentId: null,
+    theme: 'light',
+    neutralWindowTitle: 'Document Reader',
+    enableImport: true,
+    enableSearch: true,
+    enableTabs: true,
+  },
+  timers: {
+    backgroundAwayEnabled: false,
+    backgroundAwaySeconds: 60,
+    backgroundAwayCancelOnReturn: true,
+    backgroundAwayPreserveDeadline: false,
+    backgroundAwayDeletion: 'keep_all',
+    foregroundIdleEnabled: false,
+    foregroundIdleSeconds: 120,
+    systemIdleEnabled: false,
+    systemIdleSeconds: 300,
+  },
+  calls: {
+    voiceAction: 'continue',
+    cameraAction: 'continue',
+    screenShareAction: 'continue',
+    showCallIndicatorInPdf: true,
+  },
+  notifications: {
+    unlockedLevel: 'full_preview',
+    pdfModeLevel: 'generic_notice',
+    windowsLockedLevel: 'silent',
+    minimizedLevel: 'generic_notice',
+    screenSharingLevel: 'silent',
+    dndLevel: 'silent',
+    dndEnabled: false,
+    suppressTaskbarBadge: false,
+    suppressTrayPreview: false,
+    suppressSounds: false,
+    hideContactNames: true,
+    hideAttachmentThumbnails: true,
+  },
+  triggerOnAltTab: true,
+  triggerOnClickOtherApp: true,
+  triggerOnFocusLoss: true,
+  triggerOnMinimize: true,
+  triggerOnShowDesktop: true,
+  triggerOnVirtualDesktop: true,
+  triggerOnSessionLock: true,
+  triggerOnWindowClose: true,
+  triggerOnRestart: true,
+  rules: [],
+};
+
 function formatModeBadge(mode: P2pGhostModeLevel, enabled: boolean): string {
   if (!enabled || mode === 'off') return 'Ghost: Off';
   if (mode === 'privacy_shield') return 'Ghost: Shield';
@@ -152,6 +227,19 @@ export function P2pWorkspacePage() {
   const [exportPw2, setExportPw2] = useState('');
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [ghostSettingsOpen, setGhostSettingsOpen] = useState(false);
+  const [stealthSettingsOpen, setStealthSettingsOpen] = useState(false);
+
+  // Stealth Mode Authoritative State
+  const [stealthBootstrap, setStealthBootstrap] = useState<P2pStealthBootstrapState | null>(null);
+  const [stealthConfig, setStealthConfig] = useState<P2pStealthConfig>(DEFAULT_STEALTH_CONFIG);
+  const [pdfDocs, setPdfDocs] = useState<P2pPdfDocument[]>([]);
+  const [lockScreenMethod, setLockScreenMethod] = useState<UnlockMethod>('passphrase');
+  const [lockScreenSecret, setLockScreenSecret] = useState('');
+  const [lockScreenSecondFactor, setLockScreenSecondFactor] = useState('');
+  const [lockScreenNeedSecond, setLockScreenNeedSecond] = useState(false);
+  const [lockScreenRecovery, setLockScreenRecovery] = useState('');
+  const [lockScreenUseRecovery, setLockScreenUseRecovery] = useState(false);
+  const [lockScreenMsg, setLockScreenMsg] = useState<string | null>(null);
 
   // Ghost Mode Authoritative State
   const [ghostPolicy, setGhostPolicy] = useState<P2pGhostPolicy>(DEFAULT_GHOST_POLICY);
@@ -196,9 +284,31 @@ export function P2pWorkspacePage() {
   activeChannelRef.current = activeChannelId;
   const inAppModalRef = useRef(false);
   const ghostSeqRef = useRef(0);
+  const stealthLockedRef = useRef(false);
+  const prevSurfaceRef = useRef<string>('messenger');
+  const stealthCfgRef = useRef<P2pStealthConfig>(DEFAULT_STEALTH_CONFIG);
+  const lastForegroundPingRef = useRef(0);
+  const remoteKeepAliveAudioRef = useRef<HTMLAudioElement | null>(null);
   const applyGhostState = useCallback((next: P2pGhostRuntimeState) => {
     ghostSeqRef.current += 1;
     setGhostState(next);
+  }, []);
+
+  const clearSensitiveTransientState = useCallback((fullLock: boolean) => {
+    setComposerText('');
+    setPendingFiles([]);
+    setUploadedAttIds([]);
+    setSearchQuery('');
+    setTicketUri('');
+    setPairUri('');
+    setExportOpen(false);
+    setExportPw('');
+    setExportPw2('');
+    setGhostSettingsOpen(false);
+    setStealthSettingsOpen(false);
+    if (fullLock) {
+      setMessages([]);
+    }
   }, []);
 
   const isMasked = Boolean(ghostState && (ghostState.shielded || ghostState.pinLocked));
@@ -221,7 +331,23 @@ export function P2pWorkspacePage() {
   const refreshState = useCallback(async () => {
     const startSeq = ghostSeqRef.current;
     try {
-      const [st, diag, rList, pList, gPol, gSt, gOv] = await Promise.all([
+      const [boot, docs] = await Promise.all([
+        p2pApi.getStealthBootstrap(),
+        p2pApi.listPdfDocuments().catch(() => [] as P2pPdfDocument[]),
+      ]);
+      setStealthBootstrap(boot);
+      stealthLockedRef.current = boot.locked;
+      prevSurfaceRef.current = boot.activeSurface;
+      document.title = boot.windowTitle || 'Cloak';
+      setPdfDocs(docs);
+      setUnavailableReason(null);
+
+      if (boot.locked) {
+        clearSensitiveTransientState(true);
+        return;
+      }
+
+      const [st, diag, rList, pList, gPol, gSt, gOv, sCfg] = await Promise.all([
         p2pApi.getStatus(),
         p2pApi.getNetworkDiagnostics().catch(() => null),
         p2pApi.listRooms(),
@@ -229,6 +355,7 @@ export function P2pWorkspacePage() {
         p2pApi.getGhostPolicy().catch(() => DEFAULT_GHOST_POLICY),
         p2pApi.getGhostState().catch(() => null),
         p2pApi.listGhostOverrides().catch(() => []),
+        p2pApi.getStealthSettings().catch(() => DEFAULT_STEALTH_CONFIG),
       ]);
       setStatus(st);
       if (diag) {
@@ -246,7 +373,8 @@ export function P2pWorkspacePage() {
       setGhostPolicy(gPol);
       if (gSt && ghostSeqRef.current === startSeq) setGhostState(gSt);
       setGhostOverrides(gOv);
-      setUnavailableReason(null);
+      setStealthConfig(sCfg);
+      stealthCfgRef.current = sCfg;
       if (!activeRoomRef.current && rList[0]) {
         setActiveRoomId(rList[0].id);
       }
@@ -255,20 +383,42 @@ export function P2pWorkspacePage() {
         setUnavailableReason(
           'Cloak Desktop API rejected the session token (401 Unauthorized). Launch via cloak-desktop.exe or pass the desktop session token.',
         );
+      } else if (err instanceof P2pApiError && err.status === 423) {
+        // Stealth Mode locked mid-refresh; re-fetch locked-safe bootstrap & decoy metadata instead of treating 423 as offline.
+        try {
+          const [boot, docs] = await Promise.all([
+            p2pApi.getStealthBootstrap(),
+            p2pApi.listPdfDocuments().catch(() => [] as P2pPdfDocument[]),
+          ]);
+          stealthLockedRef.current = boot.locked;
+          prevSurfaceRef.current = boot.activeSurface;
+          setStealthBootstrap(boot);
+          document.title = boot.windowTitle || 'Cloak';
+          setPdfDocs(docs);
+          setUnavailableReason(null);
+          if (boot.locked) {
+            clearSensitiveTransientState(true);
+          }
+        } catch {
+          setUnavailableReason(
+            'Native P2P desktop daemon is not running on this origin. Launch Cloak Desktop (cloak-desktop.exe) to use local SQLite + direct P2P mode.',
+          );
+        }
       } else {
         setUnavailableReason(
           'Native P2P desktop daemon is not running on this origin. Launch Cloak Desktop (cloak-desktop.exe) to use local SQLite + direct P2P mode.',
         );
       }
     }
-  }, []);
+  }, [clearSensitiveTransientState]);
 
   const refreshMessages = useCallback(async (rid: string, cid: string) => {
+    if (stealthLockedRef.current) return;
     try {
       const list = await p2pApi.listMessages(rid, cid);
       setMessages(list);
     } catch {
-      // Ignore while switching channels
+      // Ignore while switching channels or locked
     }
   }, []);
 
@@ -278,6 +428,7 @@ export function P2pWorkspacePage() {
   }, [refreshState, refreshDevices]);
 
   useEffect(() => {
+    if (stealthBootstrap?.locked) return;
     if (!activeRoomId) {
       setChannels([]);
       setActiveChannelId(null);
@@ -287,37 +438,178 @@ export function P2pWorkspacePage() {
     void p2pApi.listChannels(activeRoomId).then((chs) => {
       setChannels(chs);
       if (chs[0]) setActiveChannelId(chs[0].id);
-    });
-  }, [activeRoomId]);
+    }).catch(() => undefined);
+  }, [activeRoomId, stealthBootstrap?.locked]);
+
+  const stealthBootReady = stealthBootstrap !== null;
+  const stealthLocked = Boolean(stealthBootstrap?.locked);
+  const stealthEnabled = Boolean(stealthBootstrap?.stealthEnabled);
+  const stealthActiveSurface = stealthBootstrap?.activeSurface ?? 'messenger';
+  const stealthPanicShortcut = stealthBootstrap?.panicShortcut ?? 'Ctrl+Shift+L';
 
   useEffect(() => {
+    if (!stealthBootReady || stealthLocked) return;
     void p2pApi.setActiveConversation(activeRoomId, activeChannelId).then(applyGhostState).catch(() => undefined);
     if (activeRoomId && activeChannelId) {
       void refreshMessages(activeRoomId, activeChannelId);
     }
-  }, [activeRoomId, activeChannelId, refreshMessages, applyGhostState]);
+  }, [activeRoomId, activeChannelId, refreshMessages, applyGhostState, stealthBootReady, stealthLocked]);
 
   // Report modal state whenever app modals are open
   useEffect(() => {
-    const anyOpen = exportOpen || ghostSettingsOpen;
+    const anyOpen = exportOpen || ghostSettingsOpen || stealthSettingsOpen;
     setModalGuarded(anyOpen);
-  }, [exportOpen, ghostSettingsOpen, setModalGuarded]);
+  }, [exportOpen, ghostSettingsOpen, stealthSettingsOpen, setModalGuarded]);
+
+  const applyStealthBootstrap = useCallback(
+    (next: P2pStealthBootstrapState) => {
+      const wasUnlockedMessenger = prevSurfaceRef.current === 'messenger' && !stealthLockedRef.current;
+      const nowConcealed = next.locked || next.activeSurface !== 'messenger';
+      const justUnlockedMessenger =
+        (stealthLockedRef.current || prevSurfaceRef.current !== 'messenger') &&
+        !next.locked &&
+        next.activeSurface === 'messenger';
+
+      stealthLockedRef.current = next.locked;
+      prevSurfaceRef.current = next.activeSurface;
+      setStealthBootstrap(next);
+      setUnavailableReason(null);
+      document.title = next.windowTitle || 'Cloak';
+
+      if (nowConcealed) {
+        clearSensitiveTransientState(next.locked);
+        if (wasUnlockedMessenger && pcRef.current) {
+          const callsCfg = stealthCfgRef.current.calls;
+          if (callsCfg.voiceAction === 'auto_mute') {
+            setMicMuted(true);
+            localStreamRef.current?.getAudioTracks().forEach((t) => {
+              t.enabled = false;
+            });
+          } else if (callsCfg.voiceAction === 'end_call') {
+            captureStopRef.current?.();
+            captureStopRef.current = null;
+            pendingIceRef.current = [];
+            pcRef.current.close();
+            pcRef.current = null;
+            localStreamRef.current?.getTracks().forEach((t) => t.stop());
+            localStreamRef.current = null;
+            setLocalStream(null);
+            setRemoteStream(null);
+            setScreenSharing(false);
+            setScreenLabel(null);
+            setCallState('idle');
+          }
+          if (callsCfg.cameraAction === 'disable_camera' || callsCfg.cameraAction === 'end_video_stream') {
+            setVideoOn(false);
+            localStreamRef.current?.getVideoTracks().forEach((t) => {
+              t.enabled = false;
+            });
+          }
+          if (callsCfg.screenShareAction === 'stop_immediately') {
+            captureStopRef.current?.();
+            captureStopRef.current = null;
+            setScreenSharing(false);
+            setScreenLabel(null);
+          }
+        }
+      } else if (justUnlockedMessenger) {
+        void refreshState();
+      }
+    },
+    [clearSensitiveTransientState, refreshState],
+  );
+
+  // Sync live call metadata to Stealth engine (zero peer/room leak)
+  const lastCallSummaryKeyRef = useRef<string>('');
+  const hasLocalAudio = Boolean(localStream?.getAudioTracks().length);
+  useEffect(() => {
+    if (!stealthBootReady || stealthLocked) return;
+    const key = `${callState}:${hasLocalAudio}:${micMuted}:${videoOn}:${screenSharing}`;
+    if (lastCallSummaryKeyRef.current === key) return;
+    lastCallSummaryKeyRef.current = key;
+    void p2pApi
+      .updateStealthCallSummary({
+        inCall: callState !== 'idle',
+        micActive: hasLocalAudio,
+        micMuted,
+        cameraActive: videoOn,
+        screenSharingActive: screenSharing,
+      })
+      .catch(() => undefined);
+  }, [callState, hasLocalAudio, micMuted, videoOn, screenSharing, stealthBootReady, stealthLocked]);
+
+  // Keep remote audio playing smoothly during PDF decoy mode without mounting messenger DOM
+  useEffect(() => {
+    const el = remoteKeepAliveAudioRef.current;
+    if (!el) return;
+    el.srcObject = remoteStream;
+    el.muted = deafened;
+  }, [remoteStream, deafened, stealthActiveSurface, stealthLocked]);
+
+  // Foreground user interaction tracker (never counts background network packets)
+  useEffect(() => {
+    if (!stealthBootReady || stealthLocked || stealthActiveSurface !== 'messenger') {
+      return;
+    }
+    const ping = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastForegroundPingRef.current < 3000) return;
+      lastForegroundPingRef.current = now;
+      void p2pApi.recordForegroundActivity().catch(() => undefined);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      ping();
+      const targetPanic = stealthPanicShortcut.toLowerCase();
+      const pressed = [
+        e.ctrlKey ? 'ctrl' : '',
+        e.shiftKey ? 'shift' : '',
+        e.altKey ? 'alt' : '',
+        e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase(),
+      ]
+        .filter(Boolean)
+        .join('+');
+      if (pressed === targetPanic) {
+        e.preventDefault();
+        void p2pApi.triggerStealth('panic_hotkey').then(applyStealthBootstrap).catch(() => undefined);
+      }
+    };
+    window.addEventListener('pointerdown', ping, { passive: true });
+    window.addEventListener('wheel', ping, { passive: true });
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', ping);
+      window.removeEventListener('wheel', ping);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [stealthBootReady, stealthLocked, stealthActiveSurface, stealthPanicShortcut, applyStealthBootstrap]);
 
   // Browser fallback visibility & focus hooks (supplementary to native Win32 HWND events)
   useEffect(() => {
-    if (isNativeDesktopShell() || !status) return;
+    if (isNativeDesktopShell() || !stealthBootReady) return;
 
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
+        if (stealthEnabled) {
+          void p2pApi.triggerStealth('minimize').then(applyStealthBootstrap).catch(() => undefined);
+        }
         void p2pApi.triggerGhost('minimize').then(applyGhostState).catch(() => undefined);
       } else {
+        if (stealthEnabled) {
+          void p2pApi.triggerStealth('restore_taskbar').then(applyStealthBootstrap).catch(() => undefined);
+        }
         void p2pApi.triggerGhost('restore_focus').then(applyGhostState).catch(() => undefined);
       }
     };
 
     const handleBlur = () => {
       if (inAppModalRef.current) return;
-      void p2pApi.triggerGhost('external_focus_loss').then(applyGhostState).catch(() => undefined);
+      if (stealthEnabled) {
+        void p2pApi.triggerStealth('focus_loss').then(applyStealthBootstrap).catch(() => undefined);
+      }
+      if (ghostPolicy.enabled) {
+        void p2pApi.triggerGhost('external_focus_loss').then(applyGhostState).catch(() => undefined);
+      }
     };
 
     const handleFocus = () => {
@@ -332,7 +624,7 @@ export function P2pWorkspacePage() {
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [status, applyGhostState]);
+  }, [stealthBootReady, stealthEnabled, ghostPolicy.enabled, applyStealthBootstrap, applyGhostState]);
 
   // Authoritative viewport dwell tracking for Ghost ClearViewed mode
   useEffect(() => {
@@ -553,38 +845,43 @@ export function P2pWorkspacePage() {
     [cleanupMediaSession, createPeerConnection, refreshDevices],
   );
 
+  const hasStealthBootstrapped = stealthBootstrap !== null;
   useEffect(() => {
-    if (!statusDeviceId) return;
+    if (!hasStealthBootstrapped) return;
     return connectP2pEvents((ev) => {
-      if (
+      if (ev.event === 'stealth_state_changed') {
+        applyStealthBootstrap(ev);
+      } else if (
         ev.event === 'peer_connected' ||
         ev.event === 'peer_disconnected' ||
         ev.event === 'peer_reconnecting'
       ) {
-        void refreshState();
+        if (!stealthLockedRef.current) void refreshState();
       } else if (ev.event === 'peer_connectivity_failed') {
-        setErrorBanner(ev.detail);
+        if (!stealthLockedRef.current) setErrorBanner(ev.detail);
       } else if (ev.event === 'ghost_state_changed') {
         applyGhostState(ev);
         if (ev.shielded) {
           setMessages([]);
-        } else if (activeRoomRef.current && activeChannelRef.current) {
+        } else if (!stealthLockedRef.current && activeRoomRef.current && activeChannelRef.current) {
           void refreshMessages(activeRoomRef.current, activeChannelRef.current);
         }
       } else if (ev.event === 'message_received' || ev.event === 'message_edited' || ev.event === 'history_changed') {
-        if (activeRoomRef.current && activeChannelRef.current) {
+        if (!stealthLockedRef.current && activeRoomRef.current && activeChannelRef.current) {
           void refreshMessages(activeRoomRef.current, activeChannelRef.current);
         }
       } else if (ev.event === 'attachment_received') {
-        setInfoBanner(`Received verified P2P file: ${ev.filename}`);
-        if (activeRoomRef.current && activeChannelRef.current) {
-          void refreshMessages(activeRoomRef.current, activeChannelRef.current);
+        if (!stealthLockedRef.current) {
+          setInfoBanner(`Received verified P2P file: ${ev.filename}`);
+          if (activeRoomRef.current && activeChannelRef.current) {
+            void refreshMessages(activeRoomRef.current, activeChannelRef.current);
+          }
         }
       } else if (ev.event === 'web_rtc_signal') {
         void handleIncomingWebRtcSignal(ev);
       }
     });
-  }, [statusDeviceId, refreshState, refreshMessages, handleIncomingWebRtcSignal, applyGhostState]);
+  }, [hasStealthBootstrapped, applyStealthBootstrap, refreshState, refreshMessages, handleIncomingWebRtcSignal, applyGhostState]);
 
   const startDirectCall = async (withVideo: boolean) => {
     if (!activeRoomId || !status) return;
@@ -1015,6 +1312,56 @@ export function P2pWorkspacePage() {
     );
   }, [messages, searchQuery]);
 
+  const handleStealthUnlockOutcome = useCallback(
+    async (outcome: P2pUnlockOutcome) => {
+      applyStealthBootstrap(outcome.bootstrap);
+      if (outcome.unlocked) {
+        setLockScreenSecret('');
+        setLockScreenSecondFactor('');
+        setLockScreenNeedSecond(false);
+        setLockScreenRecovery('');
+        setLockScreenUseRecovery(false);
+        setLockScreenMsg(null);
+        await refreshState();
+        if (outcome.targetRoomId) {
+          setActiveRoomId(outcome.targetRoomId);
+        }
+        if (outcome.openPrivacySettings) {
+          setStealthSettingsOpen(true);
+        }
+      }
+    },
+    [applyStealthBootstrap, refreshState],
+  );
+
+  const handleStealthLockScreenSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLockScreenMsg(null);
+    try {
+      const outcome = lockScreenUseRecovery
+        ? await p2pApi.recoverStealth(lockScreenRecovery)
+        : await p2pApi.unlockStealth(
+            lockScreenMethod,
+            lockScreenSecret,
+            lockScreenNeedSecond ? lockScreenSecondFactor : undefined,
+          );
+      if (outcome.needsAdditionalFactor) {
+        setLockScreenNeedSecond(true);
+        setLockScreenMsg(outcome.message);
+        applyStealthBootstrap(outcome.bootstrap);
+        return;
+      }
+      if (!outcome.unlocked) {
+        setLockScreenMsg(outcome.message || 'Verification failed.');
+        applyStealthBootstrap(outcome.bootstrap);
+        return;
+      }
+      await handleStealthUnlockOutcome(outcome);
+    } catch (err) {
+      setLockScreenMsg(err instanceof P2pApiError ? err.message : 'Unlock verification failed');
+    }
+  };
+
   if (unavailableReason) {
     return (
       <main className="min-h-screen bg-[#0c0e14] text-[#f1f3f9] flex items-center justify-center p-6">
@@ -1035,6 +1382,142 @@ export function P2pWorkspacePage() {
               Open Offline Archive Viewer
             </Link>
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!stealthBootstrap) {
+    return (
+      <main
+        data-testid="stealth-booting"
+        className="min-h-screen bg-[#0d1017] text-[#94a3b8] flex items-center justify-center p-6 text-xs"
+      >
+        Initializing local workspace...
+      </main>
+    );
+  }
+
+  const concealSurface = stealthBootstrap.locked || stealthBootstrap.activeSurface !== 'messenger';
+
+  if (concealSurface && (stealthBootstrap.activeSurface === 'pdf_reader' || stealthBootstrap.activeSurface === 'generic_doc_list')) {
+    return (
+      <>
+        {callState !== 'idle' && <audio ref={remoteKeepAliveAudioRef} autoPlay className="hidden" />}
+        <PdfReaderShell
+          bootstrap={stealthBootstrap}
+          onUnlockOutcome={(outcome) => void handleStealthUnlockOutcome(outcome)}
+          onReturnToMessenger={
+            !stealthBootstrap.locked
+              ? () => void p2pApi.returnToMessengerIfUnlocked().then(applyStealthBootstrap).catch(() => undefined)
+              : undefined
+          }
+          onEmergencyLock={() =>
+            void p2pApi.triggerStealth('panic_hotkey').then(applyStealthBootstrap).catch(() => undefined)
+          }
+        />
+      </>
+    );
+  }
+
+  if (concealSurface) {
+    return (
+      <main
+        data-testid="stealth-lock-screen"
+        className="min-h-screen bg-[#0b0d14] text-[#f1f3f9] flex items-center justify-center p-6"
+      >
+        {callState !== 'idle' && <audio ref={remoteKeepAliveAudioRef} autoPlay className="hidden" />}
+        <div className="max-w-md w-full rounded-2xl border border-[#2a3146] bg-[#141722] p-6 space-y-4 shadow-2xl">
+          <div className="mx-auto w-12 h-12 rounded-full bg-[#7c6cff]/15 border border-[#7c6cff]/40 flex items-center justify-center text-[#a5b4fc]">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div className="text-center space-y-1">
+            <h1 className="text-base font-semibold text-white">
+              {stealthBootstrap.activeSurface === 'privacy_shield' ? 'Privacy Shield Active' : 'Workspace Locked'}
+            </h1>
+            <p className="text-xs text-[#9aa3b8]">
+              Local conversations and files remain sealed until unlocked.
+              {callState !== 'idle' && stealthBootstrap.callSummary.inCall ? ' Active media session remains connected.' : ''}
+            </p>
+          </div>
+
+          {stealthBootstrap.lockoutRemainingSeconds > 0 && (
+            <div className="rounded-lg border border-[#f59e0b]/40 bg-[#f59e0b]/10 px-3 py-2 text-xs text-[#fde68a]">
+              Too many incorrect unlock attempts. Try again in {stealthBootstrap.lockoutRemainingSeconds}s.
+            </div>
+          )}
+
+          <form onSubmit={handleStealthLockScreenSubmit} className="space-y-3">
+            {!lockScreenUseRecovery ? (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {(['passphrase', 'pin', 'discreet_command'] as UnlockMethod[])
+                    .filter((m) => stealthBootstrap.enabledUnlockMethods.includes(m))
+                    .map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setLockScreenMethod(m)}
+                        className={`px-2.5 py-1 rounded text-[11px] font-medium cursor-pointer border ${
+                          lockScreenMethod === m
+                            ? 'border-[#7c6cff] bg-[#7c6cff]/20 text-white'
+                            : 'border-[#2a3146] bg-[#0d1017] text-[#9aa3b8]'
+                        }`}
+                      >
+                        {m === 'passphrase' ? 'Passphrase' : m === 'pin' ? 'PIN' : 'Command'}
+                      </button>
+                    ))}
+                </div>
+                <input
+                  type="password"
+                  value={lockScreenSecret}
+                  onChange={(e) => setLockScreenSecret(e.target.value)}
+                  placeholder="Enter unlock code or passphrase..."
+                  aria-label="Stealth unlock secret"
+                  className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+                  autoFocus
+                />
+                {lockScreenNeedSecond && (
+                  <input
+                    type="password"
+                    value={lockScreenSecondFactor}
+                    onChange={(e) => setLockScreenSecondFactor(e.target.value)}
+                    placeholder="Enter secondary passphrase factor..."
+                    aria-label="Secondary passphrase factor"
+                    className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm text-white"
+                  />
+                )}
+              </>
+            ) : (
+              <input
+                type="text"
+                value={lockScreenRecovery}
+                onChange={(e) => setLockScreenRecovery(e.target.value)}
+                placeholder="Enter offline recovery code..."
+                aria-label="Offline recovery code"
+                className="w-full rounded-lg bg-[#0d1017] border border-[#2a3146] px-3 py-2 text-sm font-mono text-white"
+                autoFocus
+              />
+            )}
+
+            {lockScreenMsg && <div className="text-xs text-[#fca5a5]">{lockScreenMsg}</div>}
+
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setLockScreenUseRecovery((v) => !v);
+                  setLockScreenMsg(null);
+                }}
+                className="text-[11px] text-[#a5b4fc] hover:underline cursor-pointer"
+              >
+                {lockScreenUseRecovery ? 'Use secret code' : 'Use recovery key'}
+              </button>
+              <Button type="submit" variant="primary" size="sm">
+                <Lock className="w-3.5 h-3.5" /> Unlock
+              </Button>
+            </div>
+          </form>
         </div>
       </main>
     );
@@ -1314,9 +1797,55 @@ export function P2pWorkspacePage() {
               <Settings2 className="w-3 h-3" />
               {formatModeBadge(effectiveMode, ghostPolicy.enabled || Boolean(activeRoomOverride))}
             </button>
+            <button
+              type="button"
+              onClick={() => setStealthSettingsOpen(true)}
+              data-testid="stealth-settings-btn"
+              className={`px-2 py-0.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer border ${
+                stealthBootstrap.stealthEnabled
+                  ? 'border-[#38bdf8]/60 bg-[#38bdf8]/15 text-[#bae6fd]'
+                  : 'border-[#2a3146] bg-[#171b28] text-[#9aa3b8]'
+              }`}
+            >
+              <FileText className="w-3 h-3" />
+              {stealthBootstrap.stealthEnabled ? 'Stealth: PDF Armed' : 'Stealth & PDF'}
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
+            {!isMasked && (
+              <>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="switch-pdf-btn"
+                  onClick={() =>
+                    void p2pApi
+                      .triggerStealth('manual_switch_to_pdf')
+                      .then(applyStealthBootstrap)
+                      .catch(() => undefined)
+                  }
+                  title="Switch to PDF Reader Cover"
+                >
+                  <FileText className="w-3.5 h-3.5" /> PDF Cover
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="stealth-lock-btn"
+                  onClick={() => {
+                    if (stealthBootstrap.stealthEnabled) {
+                      void p2pApi.triggerStealth('manual_lock').then(applyStealthBootstrap).catch(() => undefined);
+                    } else {
+                      void p2pApi.triggerGhost('manual_lock').then(applyGhostState).catch(() => undefined);
+                    }
+                  }}
+                  title="Lock / Mask Now"
+                >
+                  <Lock className="w-3.5 h-3.5" /> Lock
+                </Button>
+              </>
+            )}
             {activeRoomId && !isMasked && (
               <>
                 <div className="relative hidden sm:block">
@@ -1334,14 +1863,6 @@ export function P2pWorkspacePage() {
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => void startDirectCall(true)} disabled={callState !== 'idle'}>
                   <Video className="w-3.5 h-3.5" /> Video
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void p2pApi.triggerGhost('manual_lock').then(applyGhostState)}
-                  title="Lock / Mask Now"
-                >
-                  <Lock className="w-3.5 h-3.5" /> Lock
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => setExportOpen(true)}>
                   <Download className="w-3.5 h-3.5" /> .cloakexport
@@ -1640,6 +2161,28 @@ export function P2pWorkspacePage() {
             });
           }
           void refreshState();
+        }}
+      />
+
+      <P2pStealthSettingsModal
+        open={stealthSettingsOpen}
+        onClose={() => setStealthSettingsOpen(false)}
+        bootstrap={stealthBootstrap}
+        stealthConfig={stealthConfig}
+        ghostPolicy={ghostPolicy}
+        rooms={rooms}
+        activeRoomId={activeRoomId}
+        overrides={ghostOverrides}
+        pdfDocs={pdfDocs}
+        onSaved={async (nextCfg, nextGhost) => {
+          setStealthConfig(nextCfg);
+          stealthCfgRef.current = nextCfg;
+          setGhostPolicy(nextGhost);
+          await refreshState();
+        }}
+        onLockNow={() => {
+          setStealthSettingsOpen(false);
+          void p2pApi.triggerStealth('manual_lock').then(applyStealthBootstrap).catch(() => undefined);
         }}
       />
 

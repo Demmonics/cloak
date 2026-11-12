@@ -5,6 +5,9 @@ pub mod error;
 pub mod ghost;
 pub mod model;
 pub mod netinfo;
+pub mod stealth;
+pub mod stealth_controller;
+pub mod stealth_storage;
 pub mod storage;
 pub mod transport;
 
@@ -16,7 +19,21 @@ pub use model::{
     NetworkInterfaceCandidate, NodeEvent, OutgoingViewedPolicy, PairingTicket, PeerConnectionState,
     PeerSummary, StoredMessage, TombstoneScope, WebRtcSignalPayload, WireFrame,
 };
+pub use stealth::{
+    ActiveCallPrivacySummary, ActiveSurface, AttachmentPurgeAction, CallPrivacySettings,
+    CameraAction, LocalDeletionAction, LockAction, NotificationPrivacyLevel,
+    NotificationPrivacySettings, PdfDocumentRecord, PdfDocumentStateUpdate, PdfReaderSettings,
+    PdfReaderTheme, PrivacyRule, PrivacyTriggerKind, RuleEvaluationDecision, ScreenShareAction,
+    SecretCodeAction, SecretCodeMetadata, StealthBootstrapState, StealthConfig, StealthLaunchView,
+    StealthLifecycleState, StealthPdfReturnBehavior, StealthRateLimitState,
+    StealthTestPreviewResult, StealthVisualAction, TimerPreferences, UnlockMethod, UnlockOutcome,
+    UnlockPreferences, VoiceCallAction,
+};
+pub use stealth_controller::StealthController;
 pub use transport::P2pNode;
+
+#[cfg(test)]
+mod stealth_tests;
 
 #[cfg(test)]
 mod tests {

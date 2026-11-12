@@ -5,7 +5,9 @@ mod imp {
     use std::sync::{Arc, OnceLock};
     use std::time::{Duration, Instant};
 
-    use cloak_p2p::{GhostTriggerKind, NodeEvent, P2pNode};
+    use cloak_p2p::{
+        GhostTriggerKind, NodeEvent, P2pNode, PrivacyTriggerKind, StealthBootstrapState,
+    };
     use tao::dpi::LogicalSize;
     use tao::event::{Event, WindowEvent};
     use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
@@ -18,6 +20,7 @@ mod imp {
         NOTIFY_FOR_THIS_SESSION, WTSRegisterSessionNotification, WTSUnRegisterSessionNotification,
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallWindowProcW, GWLP_WNDPROC, GetForegroundWindow, GetWindowThreadProcessId,
         SetWindowDisplayAffinity, SetWindowLongPtrW, WM_ACTIVATEAPP, WM_WTSSESSION_CHANGE,
@@ -28,6 +31,14 @@ mod imp {
     const WDA_EXCLUDEFROMCAPTURE: u32 = 0x0000_0011;
     const WTS_SESSION_LOCK: usize = 0x7;
     const WTS_SESSION_UNLOCK: usize = 0x8;
+    const WM_POWERBROADCAST: u32 = 0x0218;
+    const PBT_APMRESUMEAUTOMATIC: usize = 0x0012;
+    const PBT_APMRESUMESUSPEND: usize = 0x0007;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetTickCount() -> u32;
+    }
 
     static PREV_WNDPROC: AtomicIsize = AtomicIsize::new(0);
     static GLOBAL_PROXY: OnceLock<EventLoopProxy<ShellUserEvent>> = OnceLock::new();
@@ -38,8 +49,11 @@ mod imp {
         AppDeactivated,
         SessionLocked,
         SessionUnlocked,
+        PowerResume,
         CaptureProtection(bool),
+        StealthUpdated(Box<StealthBootstrapState>),
         TrayShow,
+        TraySwitchPdf,
         TrayLockNow,
         TrayQuit,
         ShutdownExit,
@@ -64,6 +78,10 @@ mod imp {
                 } else if wparam == WTS_SESSION_UNLOCK {
                     let _ = proxy.send_event(ShellUserEvent::SessionUnlocked);
                 }
+            } else if msg == WM_POWERBROADCAST
+                && (wparam == PBT_APMRESUMEAUTOMATIC || wparam == PBT_APMRESUMESUSPEND)
+            {
+                let _ = proxy.send_event(ShellUserEvent::PowerResume);
             }
         }
         let prev = PREV_WNDPROC.load(Ordering::Acquire);
@@ -123,9 +141,10 @@ mod imp {
         let win_icon = WindowIcon::from_rgba(rgba.clone(), 32, 32).ok();
         let tray_img = TrayIconImage::from_rgba(rgba, 32, 32).ok();
 
+        let initial_stealth = node.get_stealth_bootstrap();
         let window = Arc::new(
             WindowBuilder::new()
-                .with_title("Cloak")
+                .with_title(&initial_stealth.window_title)
                 .with_inner_size(LogicalSize::new(1280.0, 820.0))
                 .with_min_inner_size(LogicalSize::new(720.0, 560.0))
                 .with_window_icon(win_icon)
@@ -164,20 +183,27 @@ mod imp {
                 .build(&window)?,
         );
 
-        // Native Windows System Tray Icon + Menu
+        // Native Windows System Tray Icon + Menu (neutral presentation when Stealth enabled)
         let tray_menu = Menu::new();
-        let item_show = MenuItem::new("Open Cloak", true, None);
-        let item_lock = MenuItem::new("Privacy Lock Now (Ghost)", true, None);
-        let item_quit = MenuItem::new("Quit Cloak", true, None);
+        let item_show = MenuItem::new("Show Application", true, None);
+        let item_pdf = MenuItem::new("Switch to PDF Reader", true, None);
+        let item_lock = MenuItem::new("Privacy Lock Now", true, None);
+        let item_quit = MenuItem::new("Quit", true, None);
         let id_show = item_show.id().clone();
+        let id_pdf = item_pdf.id().clone();
         let id_lock = item_lock.id().clone();
         let id_quit = item_quit.id().clone();
-        let _ = tray_menu.append_items(&[&item_show, &item_lock, &item_quit]);
+        let _ = tray_menu.append_items(&[&item_show, &item_pdf, &item_lock, &item_quit]);
 
-        let _tray_icon = tray_img.and_then(|icon| {
+        let tray_tooltip = if initial_stealth.stealth_enabled {
+            initial_stealth.window_title.as_str()
+        } else {
+            "Cloak — Encrypted Local-First P2P"
+        };
+        let tray_icon = tray_img.and_then(|icon| {
             TrayIconBuilder::new()
                 .with_menu(Box::new(tray_menu))
-                .with_tooltip("Cloak — Encrypted Local-First P2P")
+                .with_tooltip(tray_tooltip)
                 .with_icon(icon)
                 .build()
                 .ok()
@@ -187,6 +213,8 @@ mod imp {
         MenuEvent::set_event_handler(Some(move |ev: MenuEvent| {
             if ev.id == id_show {
                 let _ = tray_proxy.send_event(ShellUserEvent::TrayShow);
+            } else if ev.id == id_pdf {
+                let _ = tray_proxy.send_event(ShellUserEvent::TraySwitchPdf);
             } else if ev.id == id_lock {
                 let _ = tray_proxy.send_event(ShellUserEvent::TrayLockNow);
             } else if ev.id == id_quit {
@@ -194,15 +222,41 @@ mod imp {
             }
         }));
 
-        // Propagate Rust P2pNode Ghost capture-protection state changes directly onto the HWND
+        // Propagate Rust P2pNode Ghost & Stealth state changes directly onto HWND / window title
         let mut rx = node.subscribe();
         let cap_proxy = proxy.clone();
         std::thread::spawn(move || {
             while let Ok(ev) = rx.blocking_recv() {
-                if let NodeEvent::GhostStateChanged(st) = ev {
-                    let _ = cap_proxy.send_event(ShellUserEvent::CaptureProtection(
-                        st.capture_protection_active,
-                    ));
+                match ev {
+                    NodeEvent::GhostStateChanged(st) => {
+                        let _ = cap_proxy.send_event(ShellUserEvent::CaptureProtection(
+                            st.capture_protection_active,
+                        ));
+                    }
+                    NodeEvent::StealthStateChanged(boot) => {
+                        let _ =
+                            cap_proxy.send_event(ShellUserEvent::StealthUpdated(Box::new(boot)));
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // Windows GetLastInputInfo sampler for OS-wide system idle (distinct from app foreground idle!)
+        let idle_node = node.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                unsafe {
+                    let mut lii = LASTINPUTINFO {
+                        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+                        dwTime: 0,
+                    };
+                    if GetLastInputInfo(&mut lii) != 0 {
+                        let now_tick = GetTickCount();
+                        let idle_ms = now_tick.wrapping_sub(lii.dwTime) as u64;
+                        let _ = idle_node.stealth().report_system_idle_ms(idle_ms);
+                    }
                 }
             }
         });
@@ -291,12 +345,27 @@ mod imp {
                         let _ = node.handle_ghost_trigger(GhostTriggerKind::RestoreFocus);
                     }
                 }
+                Event::UserEvent(ShellUserEvent::PowerResume) => {
+                    let _ = node.stealth().tick_timers();
+                }
+                Event::UserEvent(ShellUserEvent::TraySwitchPdf) => {
+                    let _ = node
+                        .stealth()
+                        .handle_trigger(PrivacyTriggerKind::ManualSwitchToPdf);
+                }
                 Event::UserEvent(ShellUserEvent::TrayLockNow) => {
                     let _ = node.handle_ghost_trigger(GhostTriggerKind::ManualLock);
                 }
                 Event::UserEvent(ShellUserEvent::TrayShow) => {
                     window.set_minimized(false);
                     window.set_focus();
+                    let _ = node.stealth().notify_window_focus_restored(true);
+                }
+                Event::UserEvent(ShellUserEvent::StealthUpdated(boot)) => {
+                    window.set_title(&boot.window_title);
+                    if let Some(ref ti) = tray_icon {
+                        let _ = ti.set_tooltip(Some(&boot.window_title));
+                    }
                 }
                 Event::UserEvent(ShellUserEvent::CaptureProtection(active)) => unsafe {
                     let aff = if active {

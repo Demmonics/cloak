@@ -555,4 +555,5 @@ pub enum NodeEvent {
     },
     WebRtcSignal(WebRtcSignalPayload),
     GhostStateChanged(GhostRuntimeState),
+    StealthStateChanged(crate::stealth::StealthBootstrapState),
 }
