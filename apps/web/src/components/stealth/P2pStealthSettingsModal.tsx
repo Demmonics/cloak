@@ -263,13 +263,14 @@ export function P2pStealthSettingsModal({
     (newCodeValue.trim().length < 8 || newCodeValue.trim().replace(/^#+|#+$/g, '').length < 6);
 
   const selectCls =
-    'w-full rounded-[7px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-input)] px-2.5 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]';
+    'w-full rounded-xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-input)] px-3 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] cloak-transition';
 
   return (
     <ModalDialog
       open={open}
       onClose={onClose}
       title="Privacy, Stealth Mode & Ghost Automation"
+      description="Decoupled visual concealment, secret PDF unlock pathways, Ghost erasure, and automated trigger rules."
       wide
       footer={
         <>
@@ -292,12 +293,14 @@ export function P2pStealthSettingsModal({
         </>
       }
     >
-      <form id="stealth-settings-form" onSubmit={handleSave} className="space-y-4 text-[var(--cloak-text-body)]">
+      <form id="stealth-settings-form" onSubmit={handleSave} className="space-y-5 text-[var(--cloak-text-body)]">
         {/* Top Master Banner */}
-        <label className="flex items-center justify-between gap-3 rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] px-3.5 py-2.5 text-xs cursor-pointer">
+        <label className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] px-4 py-3 text-xs cursor-pointer cloak-transition hover:border-[var(--cloak-border-strong)]">
           <div>
-            <div className="font-semibold text-[var(--cloak-text)]">Enable Stealth & Cover System</div>
-            <div className="text-[11px] text-[var(--cloak-text-muted)]">
+            <div className="font-editorial text-base text-[var(--cloak-text)] leading-tight">
+              Enable Stealth & Cover System
+            </div>
+            <div className="text-[11px] text-[var(--cloak-text-muted)] mt-0.5 leading-relaxed">
               Controls launch view, PDF decoy switching, unlock passcodes, timers, and independent
               rules. Visual concealment stays separate from local message deletion unless enabled.
             </div>
@@ -310,7 +313,7 @@ export function P2pStealthSettingsModal({
         </label>
 
         {/* Tab Strip */}
-        <div className="flex flex-wrap gap-1 border-b border-[var(--cloak-border)] pb-2 text-xs">
+        <div className="flex flex-wrap gap-1.5 border-b border-[var(--cloak-border)] pb-3 text-xs">
           {(
             [
               ['appearance', 'Appearance', Eye],
@@ -325,10 +328,10 @@ export function P2pStealthSettingsModal({
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`px-3 py-1.5 rounded-[7px] flex items-center gap-1.5 cursor-pointer transition-colors ${
+              className={`px-3.5 py-1.5 rounded-full flex items-center gap-1.5 cursor-pointer cloak-transition border ${
                 tab === id
-                  ? 'bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)] font-semibold'
-                  : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
+                  ? 'bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)] border-transparent font-medium shadow-2xs'
+                  : 'bg-[var(--cloak-bg-surface)] border-[var(--cloak-border)] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:border-[var(--cloak-border-strong)]'
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -445,7 +448,7 @@ export function P2pStealthSettingsModal({
         {/* TAB 2: UNLOCK & SECRET CODES */}
         {tab === 'unlock' && (
           <div className="space-y-4 text-xs">
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+            <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
               <div className="font-semibold text-[var(--cloak-text)]">Authorized Unlock Pathways</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {(
@@ -512,7 +515,7 @@ export function P2pStealthSettingsModal({
             </div>
 
             {/* Add Secret Code */}
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2.5">
+            <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2.5">
               <div className="font-semibold text-[var(--cloak-text)]">Create Secret Unlock Code</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
@@ -627,7 +630,7 @@ export function P2pStealthSettingsModal({
 
             {/* Passphrase, PIN & Recovery */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+              <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
                 <div className="font-semibold text-[var(--cloak-text)]">Standard Passphrase & PIN</div>
                 <input
                   type="password"
@@ -645,7 +648,7 @@ export function P2pStealthSettingsModal({
                 />
               </div>
 
-              <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+              <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
                 <div className="font-semibold text-[var(--cloak-text)]">Recovery Key</div>
                 <p className="text-[11px] text-[var(--cloak-text-muted)]">
                   Generates an offline Argon2id-hashed recovery key in case passcodes are forgotten.
@@ -673,7 +676,7 @@ export function P2pStealthSettingsModal({
         {/* TAB 3: TRIGGERS & TIMERS */}
         {tab === 'triggers' && (
           <div className="space-y-3 text-xs">
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+            <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
               <div className="font-semibold text-[var(--cloak-text)]">Window & OS Lifecycle Triggers</div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {(
@@ -702,7 +705,7 @@ export function P2pStealthSettingsModal({
             </div>
 
             {/* Background-Away Timer */}
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2.5">
+            <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2.5">
               <label className="flex items-center justify-between font-semibold text-[var(--cloak-text)]">
                 <span>Background-Away Timer (Does NOT reset while using other apps)</span>
                 <input
@@ -824,7 +827,7 @@ export function P2pStealthSettingsModal({
 
             {/* Foreground Idle & Windows System Idle */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+              <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
                 <label className="flex items-center justify-between font-semibold text-[var(--cloak-text)]">
                   <span>Foreground App Inactivity</span>
                   <input
@@ -861,7 +864,7 @@ export function P2pStealthSettingsModal({
                 </p>
               </div>
 
-              <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+              <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
                 <label className="flex items-center justify-between font-semibold text-[var(--cloak-text)]">
                   <span>Windows OS Idle (GetLastInputInfo)</span>
                   <input
@@ -925,7 +928,7 @@ export function P2pStealthSettingsModal({
               </select>
             </label>
 
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+            <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
               <div className="font-semibold text-[var(--cloak-text)]">Active Call & Screen-Share Privacy</div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <label className="block space-y-1">
@@ -1000,7 +1003,7 @@ export function P2pStealthSettingsModal({
               </label>
             </div>
 
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+            <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
               <div className="font-semibold text-[var(--cloak-text)]">Notification Content Privacy</div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {(
@@ -1085,7 +1088,7 @@ export function P2pStealthSettingsModal({
         {/* TAB 5: GHOST MODE (Independent Local Message Deletion) */}
         {tab === 'ghost' && (
           <div className="space-y-3 text-xs">
-            <label className="flex items-center justify-between rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3">
+            <label className="flex items-center justify-between rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3">
               <div>
                 <div className="font-semibold text-[var(--cloak-text)]">Enable Ghost Mode Local Retention Engine</div>
                 <div className="text-[11px] text-[var(--cloak-text-muted)]">
@@ -1116,10 +1119,10 @@ export function P2pStealthSettingsModal({
               ).map(([m, title, desc]) => (
                 <label
                   key={m}
-                  className={`p-2.5 rounded-[8px] border cursor-pointer flex gap-2 transition-colors ${
+                  className={`rounded-2xl border p-3.5 cursor-pointer flex gap-2.5 cloak-transition ${
                     ghost.mode === m
-                      ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)]'
-                      : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] hover:border-[var(--cloak-border-strong)]'
+                      ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-bg-active)] shadow-2xs'
+                      : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] hover:border-[var(--cloak-border-strong)]'
                   }`}
                 >
                   <input
@@ -1152,7 +1155,7 @@ export function P2pStealthSettingsModal({
               </label>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3">
               <label className="block space-y-1">
                 <span className="text-[var(--cloak-text-muted)]">Outgoing Message Viewed Rule</span>
                 <select
@@ -1193,7 +1196,7 @@ export function P2pStealthSettingsModal({
             </div>
 
             {activeRoomId && (
-              <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+              <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
                 <label className="flex items-center justify-between font-semibold text-[var(--cloak-text)]">
                   <span>Per-Conversation Override (Active Room)</span>
                   <input
@@ -1221,7 +1224,7 @@ export function P2pStealthSettingsModal({
         {/* TAB 6: ADVANCED RULES ENGINE & SAFE TEST MODE */}
         {tab === 'advanced' && (
           <div className="space-y-4 text-xs">
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+            <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-[var(--cloak-text)]">
                   WHEN [Trigger] OCCURS → PERFORM [Actions] ({cfg.rules.length})

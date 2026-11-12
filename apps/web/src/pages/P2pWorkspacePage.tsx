@@ -4,7 +4,9 @@ import {
   Archive,
   Check,
   Copy,
+  CornerUpLeft,
   Download,
+  Edit3,
   Eye,
   EyeOff,
   FileText,
@@ -13,6 +15,7 @@ import {
   Link2,
   Lock,
   Menu,
+  MoreHorizontal,
   Paperclip,
   Phone,
   Plus,
@@ -29,8 +32,9 @@ import {
   X,
 } from 'lucide-react';
 import { DISAPPEARING_MESSAGE_OPTIONS } from '@cloak/config';
-import { Button, ModalDialog } from '@cloak/ui';
+import { Avatar, Button, ConfirmDialog, ModalDialog, Skeleton } from '@cloak/ui';
 import { ThemeToggle } from '../components/ThemeToggle.js';
+import { P2pAttachmentItem } from '../components/p2p/P2pAttachmentItem.js';
 import { P2pGhostSettingsModal } from '../components/p2p/P2pGhostSettingsModal.js';
 import { PdfReaderShell } from '../components/pdf/PdfReaderShell.js';
 import { P2pStealthSettingsModal } from '../components/stealth/P2pStealthSettingsModal.js';
@@ -222,13 +226,19 @@ export function P2pWorkspacePage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadedAttIds, setUploadedAttIds] = useState<string[]>([]);
 
-  // Modals
+  // Modals & Interactive Messaging States
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPw, setExportPw] = useState('');
   const [exportPw2, setExportPw2] = useState('');
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [ghostSettingsOpen, setGhostSettingsOpen] = useState(false);
   const [stealthSettingsOpen, setStealthSettingsOpen] = useState(false);
+  const [burnConfirmOpen, setBurnConfirmOpen] = useState(false);
+  const [burnBusy, setBurnBusy] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [replyQuote, setReplyQuote] = useState<{ id: string; sender: string; snippet: string } | null>(null);
+  const [editingMsg, setEditingMsg] = useState<P2pMessageView | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ msg: P2pMessageView; x: number; y: number } | null>(null);
 
   // Stealth Mode Authoritative State
   const [stealthBootstrap, setStealthBootstrap] = useState<P2pStealthBootstrapState | null>(null);
@@ -307,6 +317,10 @@ export function P2pWorkspacePage() {
     setExportPw2('');
     setGhostSettingsOpen(false);
     setStealthSettingsOpen(false);
+    setBurnConfirmOpen(false);
+    setReplyQuote(null);
+    setEditingMsg(null);
+    setContextMenu(null);
     if (fullLock) {
       setMessages([]);
     }
@@ -413,13 +427,16 @@ export function P2pWorkspacePage() {
     }
   }, [clearSensitiveTransientState]);
 
-  const refreshMessages = useCallback(async (rid: string, cid: string) => {
+  const refreshMessages = useCallback(async (rid: string, cid: string, showLoader = false) => {
     if (stealthLockedRef.current) return;
+    if (showLoader) setLoadingMessages(true);
     try {
       const list = await p2pApi.listMessages(rid, cid);
       setMessages(list);
     } catch {
       // Ignore while switching channels or locked
+    } finally {
+      if (showLoader) setLoadingMessages(false);
     }
   }, []);
 
@@ -429,6 +446,20 @@ export function P2pWorkspacePage() {
   }, [refreshState, refreshDevices]);
 
   useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
     if (stealthBootstrap?.locked) return;
     if (!activeRoomId) {
       setChannels([]);
@@ -436,10 +467,12 @@ export function P2pWorkspacePage() {
       setMessages([]);
       return;
     }
+    setLoadingMessages(true);
     void p2pApi.listChannels(activeRoomId).then((chs) => {
       setChannels(chs);
       if (chs[0]) setActiveChannelId(chs[0].id);
-    }).catch(() => undefined);
+      else setLoadingMessages(false);
+    }).catch(() => setLoadingMessages(false));
   }, [activeRoomId, stealthBootstrap?.locked]);
 
   const stealthBootReady = stealthBootstrap !== null;
@@ -452,15 +485,15 @@ export function P2pWorkspacePage() {
     if (!stealthBootReady || stealthLocked) return;
     void p2pApi.setActiveConversation(activeRoomId, activeChannelId).then(applyGhostState).catch(() => undefined);
     if (activeRoomId && activeChannelId) {
-      void refreshMessages(activeRoomId, activeChannelId);
+      void refreshMessages(activeRoomId, activeChannelId, true);
     }
   }, [activeRoomId, activeChannelId, refreshMessages, applyGhostState, stealthBootReady, stealthLocked]);
 
   // Report modal state whenever app modals are open
   useEffect(() => {
-    const anyOpen = exportOpen || ghostSettingsOpen || stealthSettingsOpen;
+    const anyOpen = exportOpen || ghostSettingsOpen || stealthSettingsOpen || burnConfirmOpen;
     setModalGuarded(anyOpen);
-  }, [exportOpen, ghostSettingsOpen, stealthSettingsOpen, setModalGuarded]);
+  }, [exportOpen, ghostSettingsOpen, stealthSettingsOpen, burnConfirmOpen, setModalGuarded]);
 
   const applyStealthBootstrap = useCallback(
     (next: P2pStealthBootstrapState) => {
@@ -964,8 +997,10 @@ export function P2pWorkspacePage() {
     }
 
     let running = true;
+    let inFlight = false;
     const drawFrame = async () => {
-      if (!running) return;
+      if (!running || inFlight) return;
+      inFlight = true;
       try {
         const blob = await p2pApi.getCaptureFrameBlob(source.id, spec.width);
         const bmp = await createImageBitmap(blob);
@@ -978,11 +1013,13 @@ export function P2pWorkspacePage() {
         bmp.close();
       } catch {
         // Keep last drawn frame cleanly
+      } finally {
+        inFlight = false;
       }
     };
 
     await drawFrame();
-    const intervalMs = Math.max(33, Math.round(1000 / Math.min(spec.fps, 30)));
+    const intervalMs = Math.max(16, Math.round(1000 / spec.fps));
     const timer = window.setInterval(() => void drawFrame(), intervalMs);
 
     const stream = canvas.captureStream(spec.fps);
@@ -1105,6 +1142,21 @@ export function P2pWorkspacePage() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeRoomId || !activeChannelId) return;
+
+    if (editingMsg) {
+      const nextText = composerText.trim();
+      if (!nextText) return;
+      try {
+        await p2pApi.editMessage(activeRoomId, editingMsg.id, nextText);
+        setEditingMsg(null);
+        setComposerText('');
+        await refreshMessages(activeRoomId, activeChannelId);
+      } catch (err) {
+        setErrorBanner(err instanceof Error ? err.message : 'Failed to edit P2P message');
+      }
+      return;
+    }
+
     if (!composerText.trim() && pendingFiles.length === 0 && uploadedAttIds.length === 0) return;
 
     let expireInSeconds: number | null = null;
@@ -1132,8 +1184,12 @@ export function P2pWorkspacePage() {
         const meta = await p2pApi.uploadAttachment(activeRoomId, file);
         attachmentIds.push(meta.id);
       }
+      const rawBody = composerText.trim();
+      const textPayload = replyQuote
+        ? `> **${replyQuote.sender}:** ${replyQuote.snippet}\n\n${rawBody || '(reply)'}`
+        : rawBody || '(attachment)';
       await p2pApi.sendMessage(activeRoomId, activeChannelId, {
-        text: composerText.trim() || '(attachment)',
+        text: textPayload,
         attachmentIds,
         expireInSeconds,
         expireOnLeave,
@@ -1142,6 +1198,7 @@ export function P2pWorkspacePage() {
       setComposerText('');
       setPendingFiles([]);
       setUploadedAttIds([]);
+      setReplyQuote(null);
       await refreshMessages(activeRoomId, activeChannelId);
     } catch (err) {
       setErrorBanner(err instanceof Error ? err.message : 'Failed to send P2P message');
@@ -1366,23 +1423,36 @@ export function P2pWorkspacePage() {
   if (unavailableReason) {
     return (
       <main className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex items-center justify-center p-6">
-        <div className="max-w-lg rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-6 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 text-[var(--cloak-accent-text)]">
-              <ShieldCheck className="w-6 h-6" />
-              <h1 className="text-lg font-semibold text-[var(--cloak-text)]">Cloak Direct P2P Desktop Mode</h1>
+        <div className="cloak-panel-enter max-w-lg w-full rounded-3xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-7 space-y-5">
+          <div className="flex items-start justify-between gap-3 pb-4 border-b border-[var(--cloak-border)]">
+            <div className="space-y-1">
+              <div className="text-[10px] uppercase tracking-[0.16em] font-medium text-[var(--cloak-text-muted)]">
+                Desktop Runtime Required
+              </div>
+              <div className="flex items-center gap-2.5 text-[var(--cloak-accent-text)]">
+                <ShieldCheck className="w-5 h-5 shrink-0" />
+                <h1 className="font-editorial text-2xl font-normal text-[var(--cloak-text)] tracking-tight">
+                  Cloak Direct P2P Desktop Mode
+                </h1>
+              </div>
             </div>
             <ThemeToggle />
           </div>
           <p className="text-sm text-[var(--cloak-text-body)] leading-relaxed">{unavailableReason}</p>
-          <div className="rounded-[8px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-3 font-mono text-xs text-[var(--cloak-accent-text)]">
+          <div className="rounded-2xl bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-3.5 font-mono-tabular text-xs text-[var(--cloak-accent-text)]">
             cargo +stable-x86_64-pc-windows-gnu run --release -p cloak-desktop
           </div>
-          <div className="flex gap-2">
-            <Link to="/" className="px-3 py-2 rounded-[7px] bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)] text-xs font-medium">
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Link
+              to="/"
+              className="cloak-transition px-4 py-2 rounded-full bg-[var(--cloak-accent)] hover:bg-[var(--cloak-accent-hover)] text-[var(--cloak-accent-ink)] text-xs font-medium"
+            >
               Open Browser Workspace
             </Link>
-            <Link to="/archive" className="px-3 py-2 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] text-xs font-medium">
+            <Link
+              to="/archive"
+              className="cloak-transition px-4 py-2 rounded-full bg-[var(--cloak-bg-surface)] hover:bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] text-xs font-medium"
+            >
               Open Offline Archive Viewer
             </Link>
           </div>
@@ -1395,9 +1465,21 @@ export function P2pWorkspacePage() {
     return (
       <main
         data-testid="stealth-booting"
-        className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text-muted)] flex items-center justify-center p-6 text-xs"
+        className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text-muted)] flex items-center justify-center p-6"
       >
-        Initializing local workspace...
+        <div className="max-w-sm w-full rounded-3xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] p-6 space-y-4 shadow-[var(--cloak-card-shadow)]">
+          <div className="flex items-center justify-between">
+            <span className="font-editorial text-xl text-[var(--cloak-text)]">Cloak</span>
+            <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--cloak-text-dim)]">
+              Vault Boot
+            </span>
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-3/4 rounded-full" />
+            <Skeleton className="h-3 w-1/2 rounded-full" />
+          </div>
+          <p className="text-xs text-[var(--cloak-text-muted)]">Initializing local workspace...</p>
+        </div>
       </main>
     );
   }
@@ -1431,30 +1513,33 @@ export function P2pWorkspacePage() {
         className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex items-center justify-center p-6"
       >
         {callState !== 'idle' && <audio ref={remoteKeepAliveAudioRef} autoPlay className="hidden" />}
-        <div className="max-w-md w-full rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-6 space-y-4">
-          <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
-            <Lock className="w-6 h-6" />
+        <div className="cloak-panel-enter max-w-md w-full rounded-3xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-7 space-y-5">
+          <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-bg-sage-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
+            <Lock className="w-5 h-5" />
           </div>
-          <div className="text-center space-y-1">
-            <h1 className="text-base font-semibold text-[var(--cloak-text)]">
+          <div className="text-center space-y-1.5">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--cloak-text-dim)]">
+              Cloak Local Vault
+            </div>
+            <h1 className="font-editorial text-2xl font-normal text-[var(--cloak-text)] tracking-tight">
               {stealthBootstrap.activeSurface === 'privacy_shield' ? 'Privacy Shield Active' : 'Workspace Locked'}
             </h1>
-            <p className="text-xs text-[var(--cloak-text-muted)]">
+            <p className="text-xs text-[var(--cloak-text-muted)] leading-relaxed">
               Local conversations and files remain sealed until unlocked.
               {callState !== 'idle' && stealthBootstrap.callSummary.inCall ? ' Active media session remains connected.' : ''}
             </p>
           </div>
 
           {stealthBootstrap.lockoutRemainingSeconds > 0 && (
-            <div className="rounded-[8px] border border-[var(--cloak-warn-border)] bg-[var(--cloak-warn-soft)] px-3 py-2 text-xs text-[var(--cloak-warn-text)]">
+            <div className="rounded-2xl border border-[var(--cloak-warn-border)] bg-[var(--cloak-warn-soft)] px-3.5 py-2.5 text-xs text-[var(--cloak-warn-text)]">
               Too many incorrect unlock attempts. Try again in {stealthBootstrap.lockoutRemainingSeconds}s.
             </div>
           )}
 
-          <form onSubmit={handleStealthLockScreenSubmit} className="space-y-3">
+          <form onSubmit={handleStealthLockScreenSubmit} className="space-y-3.5">
             {!lockScreenUseRecovery ? (
               <>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5 justify-center">
                   {(['passphrase', 'pin', 'discreet_command'] as UnlockMethod[])
                     .filter((m) => stealthBootstrap.enabledUnlockMethods.includes(m))
                     .map((m) => (
@@ -1462,10 +1547,10 @@ export function P2pWorkspacePage() {
                         key={m}
                         type="button"
                         onClick={() => setLockScreenMethod(m)}
-                        className={`px-2.5 py-1 rounded-[7px] text-[11px] font-medium cursor-pointer border transition-colors ${
+                        className={`px-3 py-1 rounded-full text-[11px] font-medium cursor-pointer border cloak-transition ${
                           lockScreenMethod === m
-                            ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)] text-[var(--cloak-text)]'
-                            : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-input)] text-[var(--cloak-text-muted)]'
+                            ? 'border-transparent bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)]'
+                            : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]'
                         }`}
                       >
                         {m === 'passphrase' ? 'Passphrase' : m === 'pin' ? 'PIN' : 'Command'}
@@ -1478,7 +1563,7 @@ export function P2pWorkspacePage() {
                   onChange={(e) => setLockScreenSecret(e.target.value)}
                   placeholder="Enter unlock code or passphrase..."
                   aria-label="Stealth unlock secret"
-                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+                  className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-4 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                   autoFocus
                 />
                 {lockScreenNeedSecond && (
@@ -1488,7 +1573,7 @@ export function P2pWorkspacePage() {
                     onChange={(e) => setLockScreenSecondFactor(e.target.value)}
                     placeholder="Enter secondary passphrase factor..."
                     aria-label="Secondary passphrase factor"
-                    className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+                    className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-4 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                   />
                 )}
               </>
@@ -1499,14 +1584,14 @@ export function P2pWorkspacePage() {
                 onChange={(e) => setLockScreenRecovery(e.target.value)}
                 placeholder="Enter offline recovery code..."
                 aria-label="Offline recovery code"
-                className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm font-mono text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+                className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-4 py-2 text-sm font-mono text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                 autoFocus
               />
             )}
 
             {lockScreenMsg && <div className="text-xs text-[var(--cloak-danger-text)]">{lockScreenMsg}</div>}
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => {
@@ -1536,56 +1621,76 @@ export function P2pWorkspacePage() {
 
   return (
     <div className="h-screen flex bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] overflow-hidden relative">
-      {/* Left Sidebar: Node Info + Network Diagnostics + Rooms + Direct Pairing */}
+      {sidebarOpen && (
+        <div
+          aria-hidden="true"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-[var(--cloak-backdrop)] lg:hidden"
+        />
+      )}
+
+      {/* Left Sidebar: Editorial Vault Plate + Connectivity + Rooms + Direct Pairing + Peers */}
       <aside
+        aria-label="Vault navigation and peer directory"
         className={`${
-          sidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex' : 'hidden lg:flex'
-        } w-80 max-w-[85vw] shrink-0 bg-[var(--cloak-bg-sidebar)] border-r border-[var(--cloak-border)] flex-col overflow-y-auto p-3 gap-3`}
+          sidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex shadow-2xl' : 'hidden lg:flex'
+        } w-[308px] max-w-[88vw] shrink-0 bg-[var(--cloak-bg-sidebar)] border-r border-[var(--cloak-border)] flex-col overflow-y-auto p-3.5 gap-3.5`}
       >
-        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-semibold text-[var(--cloak-accent-text)] uppercase tracking-wider">Local SQLite Vault</span>
-            <div className="flex items-center gap-1.5">
-              {diagnostics?.vaultDpapiProtected && (
-                <span className="px-1.5 py-0.5 rounded-[5px] border border-[var(--cloak-success-border)] bg-[var(--cloak-success-soft)] text-[var(--cloak-success-text)] text-[10px] font-mono font-medium">
-                  DPAPI
+        {/* Editorial Node Identity Card */}
+        <div className="shrink-0 rounded-2xl overflow-hidden border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-card-shadow)]">
+          <div className="bg-[var(--cloak-bg-sage)] text-[#F2F1ED] px-4 py-3 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-[#E3E7E2]">
+                Local SQLite Vault
+              </span>
+              <div className="flex items-center gap-1.5">
+                {diagnostics?.vaultDpapiProtected && (
+                  <span className="px-2 py-0.5 rounded-full border border-[#F2F1ED]/30 bg-[#0E1A18]/25 text-[#F2F1ED] text-[10px] font-mono-tabular font-medium">
+                    DPAPI
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-label="Close sidebar"
+                  onClick={() => setSidebarOpen(false)}
+                  className="lg:hidden text-[#F2F1ED]/85 hover:text-[#F2F1ED] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="font-editorial text-xl font-normal tracking-tight text-[#F6F5F0] truncate">
+              {hideRoomTitle ? '•••••• (Protected)' : status?.displayName}
+            </div>
+          </div>
+
+          <div className="px-4 py-2.5 space-y-1.5 text-[11px]">
+            <div className="font-mono-tabular text-[var(--cloak-text-muted)] truncate" title={status?.listenAddr}>
+              Listen: {status?.listenAddr}
+            </div>
+            {diagnostics && (
+              <div className="text-[var(--cloak-text-muted)] leading-snug">
+                LAN IPv4:{' '}
+                <span className="text-[var(--cloak-success-text)] font-mono-tabular font-medium">
+                  {diagnostics.primaryLanIp ?? 'none'}
                 </span>
-              )}
-              <button
-                type="button"
-                aria-label="Close sidebar"
-                onClick={() => setSidebarOpen(false)}
-                className="lg:hidden text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+                {diagnostics.primaryIpv6 ? ' · IPv6 ready' : ''}
+              </div>
+            )}
+            <div className="flex items-center gap-2.5 pt-1.5 border-t border-[var(--cloak-border)] text-[11px]">
+              <Link to="/archive" className="inline-flex items-center gap-1 text-[var(--cloak-info-text)] hover:underline">
+                <Archive className="w-3 h-3" /> /archive
+              </Link>
+              <span className="text-[var(--cloak-border-strong)]">·</span>
+              <Link to="/" className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]">
+                Server Mode
+              </Link>
             </div>
-          </div>
-          <div className="text-sm font-semibold text-[var(--cloak-text)]">
-            {hideRoomTitle ? '•••••• (Protected)' : status?.displayName}
-          </div>
-          <div className="text-[11px] font-mono text-[var(--cloak-text-dim)] truncate" title={status?.listenAddr}>
-            Listen: {status?.listenAddr}
-          </div>
-          {diagnostics && (
-            <div className="text-[11px] text-[var(--cloak-text-muted)] leading-snug">
-              LAN IPv4: <span className="text-[var(--cloak-success-text)] font-mono">{diagnostics.primaryLanIp ?? 'none'}</span>
-              {diagnostics.primaryIpv6 ? ` · IPv6 ready` : ''}
-            </div>
-          )}
-          <div className="flex items-center gap-2 pt-1 text-[11px]">
-            <Link to="/archive" className="inline-flex items-center gap-1 text-[var(--cloak-info-text)] hover:underline">
-              <Archive className="w-3 h-3" /> /archive
-            </Link>
-            <span className="text-[var(--cloak-border-strong)]">·</span>
-            <Link to="/" className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)]">
-              Server Mode
-            </Link>
           </div>
         </div>
 
         {/* Connectivity & Firewall Diagnostics */}
-        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2 text-xs">
+        <div className="shrink-0 rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] p-3.5 space-y-2 text-xs">
           <label className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)]">
             <input
               type="checkbox"
@@ -1599,11 +1704,11 @@ export function P2pWorkspacePage() {
               value={stunUrl}
               onChange={(e) => setStunUrl(e.target.value)}
               placeholder="stun:stun.example.org:3478"
-              className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+              className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
             />
           )}
           {diagnostics && (
-            <div className="text-[11px] text-[var(--cloak-text-muted)] border-t border-[var(--cloak-border)] pt-1.5">
+            <div className="text-[11px] text-[var(--cloak-text-muted)] border-t border-[var(--cloak-border)] pt-2 leading-relaxed">
               Firewall:{' '}
               <span className={diagnostics.windowsFirewallRulePresent ? 'text-[var(--cloak-success-text)]' : 'text-[var(--cloak-warn-text)]'}>
                 {diagnostics.firewallNote}
@@ -1613,44 +1718,55 @@ export function P2pWorkspacePage() {
         </div>
 
         {/* Rooms */}
-        <div className="space-y-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">Local P2P Rooms</div>
+        <div className="shrink-0 space-y-2">
+          <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
+            Local P2P Rooms
+          </div>
           <form onSubmit={handleCreateRoom} className="flex gap-1.5">
             <input
               value={newRoomName}
               onChange={(e) => setNewRoomName(e.target.value)}
               placeholder="New private room..."
-              className="flex-1 rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] min-w-0"
+              className="flex-1 rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3.5 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] min-w-0"
             />
-            <Button size="sm" type="submit" aria-label="Create P2P Room">
+            <Button size="sm" type="submit" aria-label="Create P2P Room" className="px-2.5">
               <Plus className="w-3.5 h-3.5" />
             </Button>
           </form>
           <div className="space-y-1">
-            {rooms.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => {
-                  setActiveRoomId(r.id);
-                  setSidebarOpen(false);
-                }}
-                className={`w-full text-left px-2.5 py-2 rounded-[7px] text-xs font-medium flex items-center justify-between cursor-pointer border transition-colors ${
-                  r.id === activeRoomId
-                    ? 'bg-[var(--cloak-bg-active)] border-[var(--cloak-border)] border-l-2 border-l-[var(--cloak-accent)] text-[var(--cloak-text)]'
-                    : 'bg-[var(--cloak-bg-surface)] border-transparent text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-hover)]'
-                }`}
-              >
-                <span className="truncate">{hideRoomTitle ? 'Protected Room' : r.name}</span>
-                <span className="font-mono text-[10px] text-[var(--cloak-text-muted)]">E{r.currentEpoch}</span>
-              </button>
-            ))}
+            {rooms.map((r) => {
+              const active = r.id === activeRoomId;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveRoomId(r.id);
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer border cloak-transition ${
+                    active
+                      ? 'bg-[var(--cloak-bg-active)] border-[var(--cloak-accent-border)] border-l-[3px] border-l-[var(--cloak-accent)] text-[var(--cloak-text)] shadow-2xs'
+                      : 'bg-[var(--cloak-bg-card)]/70 border-transparent text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-card)] hover:border-[var(--cloak-border)]'
+                  }`}
+                >
+                  <span className={`truncate ${active ? 'font-editorial text-sm text-[var(--cloak-text)]' : 'font-medium'}`}>
+                    {hideRoomTitle ? 'Protected Room' : r.name}
+                  </span>
+                  <span className="font-mono-tabular text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--cloak-bg-surface)] border border-[var(--cloak-border)] text-[var(--cloak-text-muted)]">
+                    E{r.currentEpoch}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Direct Pairing Ticket */}
-        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">Direct Pairing Ticket</div>
+        <div className="shrink-0 rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] p-3.5 space-y-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
+            Direct Pairing Ticket
+          </div>
           {activeRoomId && (
             <>
               {diagnostics && diagnostics.interfaces.length > 0 && (
@@ -1658,7 +1774,7 @@ export function P2pWorkspacePage() {
                   aria-label="Advertised interface address"
                   value={advertisedAddr}
                   onChange={(e) => setAdvertisedAddr(e.target.value)}
-                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-[11px] text-[var(--cloak-text-body)]"
+                  className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1.5 text-[11px] text-[var(--cloak-text-body)]"
                 >
                   <option value="">Loopback Default ({status?.listenAddr})</option>
                   {diagnostics.interfaces.map((iface) => (
@@ -1671,8 +1787,8 @@ export function P2pWorkspacePage() {
               <input
                 value={advertisedAddr}
                 onChange={(e) => setAdvertisedAddr(e.target.value)}
-                placeholder={`Optional LAN/IPv6 host:port`}
-                className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-[11px] text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+                placeholder="Optional LAN/IPv6 host:port"
+                className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1.5 text-[11px] text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
               />
               <div className="flex gap-1.5">
                 <Button size="sm" variant="secondary" onClick={() => void handleGenerateTicket()} className="flex-1">
@@ -1699,18 +1815,18 @@ export function P2pWorkspacePage() {
                   rows={2}
                   value={ticketUri}
                   aria-label="Shareable pairing ticket"
-                  className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-1.5 font-mono text-[10px] text-[var(--cloak-accent-text)]"
+                  className="w-full rounded-xl bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] p-2 font-mono text-[10px] text-[var(--cloak-accent-text)]"
                 />
               )}
             </>
           )}
 
-          <form onSubmit={handlePair} className="space-y-1.5 pt-2 border-t border-[var(--cloak-border)]">
+          <form onSubmit={handlePair} className="space-y-2 pt-2.5 border-t border-[var(--cloak-border)]">
             <input
               value={pairUri}
               onChange={(e) => setPairUri(e.target.value)}
               placeholder="Paste peer cloakp2p://... ticket"
-              className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+              className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3.5 py-1.5 text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
             />
             <Button size="sm" variant="primary" type="submit" className="w-full">
               Pair & Connect Directly
@@ -1719,23 +1835,35 @@ export function P2pWorkspacePage() {
         </div>
 
         {/* Peers */}
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">Paired Peers ({peers.length})</div>
+        <div className="shrink-0 space-y-2">
+          <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
+            Paired Peers ({peers.length})
+          </div>
           {peers.map((p) => {
             const pState = status?.peerStates?.[p.deviceId] ?? (status?.activePeerIds.includes(p.deviceId) ? 'direct_connected' : 'disconnected');
+            const peerDisplay = hideRoomTitle ? 'Verified Peer' : p.displayName;
             return (
-              <div key={p.deviceId} className="rounded-[8px] bg-[var(--cloak-bg-surface)] border border-[var(--cloak-border)] p-2 text-xs flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-medium text-[var(--cloak-text)] truncate">
-                    {hideRoomTitle ? 'Verified Peer' : p.displayName}
+              <div
+                key={p.deviceId}
+                className="rounded-2xl bg-[var(--cloak-bg-card)] border border-[var(--cloak-border)] px-3 py-2.5 text-xs flex items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Avatar
+                    size="sm"
+                    name={peerDisplay}
+                    color="#4D6153"
+                    status={p.revoked ? 'offline' : pState === 'direct_connected' ? 'online' : 'idle'}
+                  />
+                  <div className="min-w-0">
+                    <div className="font-medium text-[var(--cloak-text)] truncate">{peerDisplay}</div>
+                    <div className="text-[10px] font-mono-tabular text-[var(--cloak-text-dim)] truncate">{p.directAddr}</div>
                   </div>
-                  <div className="text-[10px] font-mono text-[var(--cloak-text-dim)] truncate">{p.directAddr}</div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {p.revoked ? (
                     <span className="text-[10px] text-[var(--cloak-danger-text)] font-semibold">Revoked</span>
                   ) : pState === 'direct_connected' ? (
-                    <span className="text-[10px] text-[var(--cloak-success-text)] inline-flex items-center gap-1">
+                    <span className="text-[10px] text-[var(--cloak-success-text)] inline-flex items-center gap-1 font-medium">
                       <Wifi className="w-3 h-3" /> Direct
                     </span>
                   ) : (
@@ -1776,28 +1904,30 @@ export function P2pWorkspacePage() {
 
       {/* Main P2P Workspace */}
       <main className="flex-1 flex flex-col min-w-0 bg-[var(--cloak-bg-void)] relative">
-        <header className="px-3 sm:px-4 py-2.5 border-b border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)] flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
+        <header className="px-4 sm:px-5 py-2.5 border-b border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)]/90 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
             <button
               type="button"
               aria-label="Open P2P sidebar"
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-1.5 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] cursor-pointer"
+              className="lg:hidden p-2 rounded-full bg-[var(--cloak-bg-card)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer cloak-transition"
             >
               <Menu className="w-4 h-4" />
             </button>
-            <Hash className="w-4 h-4 text-[var(--cloak-accent-text)] shrink-0" />
-            <h1 className="text-sm font-semibold text-[var(--cloak-text)] truncate">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--cloak-bg-sage-soft)] border border-[var(--cloak-accent-border)] text-[var(--cloak-accent-text)] shrink-0">
+              <Hash className="w-4 h-4" />
+            </span>
+            <h1 className="font-editorial text-xl sm:text-2xl font-normal tracking-tight text-[var(--cloak-text)] truncate leading-none">
               {hideRoomTitle ? 'Protected Conversation' : (activeRoom?.name ?? 'Select or Create a Room')}
             </h1>
             <button
               type="button"
               onClick={() => setGhostSettingsOpen(true)}
               data-testid="ghost-status-pill"
-              className={`px-2 py-0.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer border ${
+              className={`cloak-transition px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer border ${
                 ghostPolicy.enabled || activeRoomOverride
-                  ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)] text-[var(--cloak-accent-text)]'
-                  : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text-muted)]'
+                  ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-bg-sage-soft)] text-[var(--cloak-accent-text)]'
+                  : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] text-[var(--cloak-text-muted)] hover:border-[var(--cloak-border-strong)] hover:text-[var(--cloak-text)]'
               }`}
             >
               <Settings2 className="w-3 h-3" />
@@ -1807,10 +1937,10 @@ export function P2pWorkspacePage() {
               type="button"
               onClick={() => setStealthSettingsOpen(true)}
               data-testid="stealth-settings-btn"
-              className={`px-2 py-0.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer border ${
+              className={`cloak-transition px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer border ${
                 stealthBootstrap.stealthEnabled
                   ? 'border-[var(--cloak-info-border)] bg-[var(--cloak-info-soft)] text-[var(--cloak-info-text)]'
-                  : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text-muted)]'
+                  : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] text-[var(--cloak-text-muted)] hover:border-[var(--cloak-border-strong)] hover:text-[var(--cloak-text)]'
               }`}
             >
               <FileText className="w-3 h-3" />
@@ -1856,13 +1986,13 @@ export function P2pWorkspacePage() {
             {activeRoomId && !isMasked && (
               <>
                 <div className="relative hidden sm:block">
-                  <Search className="w-3.5 h-3.5 text-[var(--cloak-text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Search className="w-3.5 h-3.5 text-[var(--cloak-text-muted)] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search local history..."
+                    placeholder="Search history..."
                     aria-label="Search decrypted messages"
-                    className="pl-7 pr-2 py-1 rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] w-40"
+                    className="pl-8 pr-2.5 py-1.5 rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] text-xs text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)] w-32 xl:w-44 cloak-transition focus:border-[var(--cloak-border-strong)]"
                   />
                 </div>
                 <Button size="sm" variant="secondary" onClick={() => void startDirectCall(false)} disabled={callState !== 'idle'}>
@@ -1877,11 +2007,7 @@ export function P2pWorkspacePage() {
                 <Button
                   size="sm"
                   variant="danger"
-                  onClick={() =>
-                    void p2pApi.burnRoom(activeRoomId).then(() => {
-                      if (activeChannelId) return refreshMessages(activeRoomId, activeChannelId);
-                    })
-                  }
+                  onClick={() => setBurnConfirmOpen(true)}
                 >
                   <Flame className="w-3.5 h-3.5" /> Burn
                 </Button>
@@ -1891,7 +2017,7 @@ export function P2pWorkspacePage() {
         </header>
 
         {errorBanner && (
-          <div role="alert" className="mx-4 mt-3 rounded-[8px] border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] px-3 py-2 text-xs text-[var(--cloak-danger-text)] flex items-center justify-between gap-2">
+          <div role="alert" className="mx-4 sm:mx-6 mt-3 rounded-2xl border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] px-4 py-2.5 text-xs text-[var(--cloak-danger-text)] flex items-center justify-between gap-2">
             <span className="flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 shrink-0" />
               {errorBanner}
@@ -1902,7 +2028,7 @@ export function P2pWorkspacePage() {
           </div>
         )}
         {infoBanner && (
-          <div className="mx-4 mt-3 rounded-[8px] border border-[var(--cloak-success-border)] bg-[var(--cloak-success-soft)] px-3 py-2 text-xs text-[var(--cloak-success-text)] flex items-center justify-between">
+          <div className="mx-4 sm:mx-6 mt-3 rounded-2xl border border-[var(--cloak-success-border)] bg-[var(--cloak-success-soft)] px-4 py-2.5 text-xs text-[var(--cloak-success-text)] flex items-center justify-between">
             <span>{infoBanner}</span>
             <button type="button" onClick={() => setInfoBanner(null)} className="text-xs underline cursor-pointer">
               Dismiss
@@ -1910,7 +2036,7 @@ export function P2pWorkspacePage() {
           </div>
         )}
         {!isMasked && ghostState?.lastCleanup && (
-          <div className="mx-4 mt-3 rounded-[8px] border border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)] px-3 py-1.5 text-[11px] text-[var(--cloak-accent-text)] flex items-center justify-between gap-2">
+          <div className="mx-4 sm:mx-6 mt-3 rounded-2xl border border-[var(--cloak-accent-border)] bg-[var(--cloak-bg-sage-soft)]/70 px-4 py-2 text-[11px] text-[var(--cloak-accent-text)] flex items-center justify-between gap-2">
             <span>
               Ghost ({ghostState.lastCleanup.mode}): cleared {ghostState.lastCleanup.deletedMessages} local message(s),
               purged {ghostState.lastCleanup.deletedAttachments} attachment blob(s), preserved{' '}
@@ -1968,26 +2094,31 @@ export function P2pWorkspacePage() {
             data-testid="ghost-privacy-overlay"
             className="flex-1 flex items-center justify-center p-6 bg-[var(--cloak-bg-void)]"
           >
-            <div className="max-w-md w-full rounded-[12px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-6 space-y-4 text-center">
-              <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-accent-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
-                <ShieldOff className="w-6 h-6" />
+            <div className="cloak-panel-enter max-w-md w-full rounded-3xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-7 space-y-5 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-bg-sage-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
+                <ShieldOff className="w-5 h-5" />
               </div>
-              <div className="space-y-1">
-                <h2 className="text-base font-semibold text-[var(--cloak-text)]">Ghost Privacy Shield Active</h2>
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--cloak-text-dim)]">
+                  Ghost Protection
+                </div>
+                <h2 className="font-editorial text-2xl font-normal text-[var(--cloak-text)] tracking-tight">
+                  Ghost Privacy Shield Active
+                </h2>
                 <p className="text-xs text-[var(--cloak-text-muted)] leading-relaxed">
                   Decrypted conversation contents are concealed on this PC while Cloak is inactive or locked.
                   {callState !== 'idle' && ' Direct encrypted call remains connected.'}
                 </p>
               </div>
               {ghostState?.pinLocked ? (
-                <form onSubmit={handleUnlockPin} className="space-y-2.5 text-left">
+                <form onSubmit={handleUnlockPin} className="space-y-3 text-left">
                   <input
                     type="password"
                     value={pinUnlockInput}
                     onChange={(e) => setPinUnlockInput(e.target.value)}
                     placeholder="Enter Ghost Privacy PIN..."
                     aria-label="Ghost Privacy PIN"
-                    className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+                    className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-4 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
                   />
                   {pinUnlockError && <div className="text-xs text-[var(--cloak-danger-text)]">{pinUnlockError}</div>}
                   <Button type="submit" variant="primary" className="w-full">
@@ -2007,148 +2138,399 @@ export function P2pWorkspacePage() {
             </div>
           </div>
         ) : (
-          <div ref={messageListRef} className="flex-1 overflow-y-auto p-4 space-y-2.5" data-testid="p2p-message-list">
-            {filteredMessages.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-[var(--cloak-text-dim)]">
-                {messages.length === 0
-                  ? 'No local messages visible in this channel.'
-                  : 'No local messages match your search filter.'}
-              </div>
-            ) : (
-              filteredMessages.map((m) => (
-                <article
-                  key={m.id}
-                  data-message-id={m.id}
-                  className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-1.5"
-                >
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <strong className="text-[var(--cloak-text)] font-semibold">
-                        {m.senderDeviceId === status?.deviceId
-                          ? status.displayName
-                          : (peers.find((p) => p.deviceId === m.senderDeviceId)?.displayName ?? m.senderDeviceId.slice(0, 8))}
-                      </strong>
-                      <span className="font-mono text-[11px] text-[var(--cloak-text-dim)]">{new Date(m.createdAt).toLocaleTimeString()}</span>
-                      {m.signatureVerified && (
-                        <span title="Ed25519 signature verified" className="text-[var(--cloak-success-text)] text-[10px] font-medium">
-                          ✓ Signed
-                        </span>
-                      )}
-                      {m.viewedAt ? (
-                        <span className="text-[10px] text-[var(--cloak-text-muted)] inline-flex items-center gap-0.5" title="Viewed in local viewport">
-                          <Eye className="w-3 h-3" /> Viewed
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-[var(--cloak-info-text)] inline-flex items-center gap-0.5" title="Not yet marked viewed">
-                          <EyeOff className="w-3 h-3" /> Unread
-                        </span>
-                      )}
-                      {m.expireOnLeave && (
-                        <span className="text-[10px] text-[var(--cloak-warn-text)]">· On-leave</span>
-                      )}
-                      {m.expireAfterViewSeconds != null && (
-                        <span className="text-[10px] text-[var(--cloak-warn-text)]">· {m.expireAfterViewSeconds}s after view</span>
-                      )}
-                      {m.expiresAt && (
-                        <span className="text-[10px] text-[var(--cloak-warn-text)]">
-                          · Exp {new Date(m.expiresAt).toLocaleTimeString()}
-                        </span>
-                      )}
-                      {m.editedAt && <span className="text-[10px] text-[var(--cloak-text-muted)]">(edited)</span>}
-                    </div>
-                    <button
-                      type="button"
-                      aria-label="Delete message for everyone"
-                      onClick={() =>
-                        void p2pApi.deleteMessage(m.roomId, m.id, 'everyone').then(() => refreshMessages(m.roomId, m.channelId))
-                      }
-                      className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-danger-text)] cursor-pointer"
+          <div ref={messageListRef} className="flex-1 overflow-y-auto overflow-x-hidden" data-testid="p2p-message-list">
+            <div className="max-w-[920px] mx-auto w-full min-h-full px-4 sm:px-8 py-6 flex flex-col">
+              {loadingMessages && messages.length === 0 ? (
+                <div className="space-y-3 my-auto max-w-xl w-full mx-auto">
+                  {[0, 1, 2].map((idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] p-4 space-y-2.5"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <SafeMarkdown text={m.text} />
-                  {m.attachments.map((att) => (
-                    <div key={att.id} className="rounded-[7px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] px-2.5 py-1.5 text-xs flex items-center justify-between gap-2">
-                      <span className="text-[var(--cloak-text-body)] truncate">
-                        {att.filename} ({(att.totalSizeBytes / 1024).toFixed(1)} KiB · SHA-256)
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void handleDownloadAttachment(att.id, att.filename)}
-                        className="text-[var(--cloak-accent-text)] hover:underline inline-flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <Download className="w-3 h-3" /> Save
-                      </button>
+                      <div className="flex items-center gap-2.5">
+                        <Skeleton className="w-7 h-7 rounded-full" />
+                        <Skeleton className="h-3 w-28 rounded-full" />
+                      </div>
+                      <Skeleton className="h-3 w-4/5 rounded-full" />
+                      <Skeleton className="h-3 w-3/5 rounded-full" />
                     </div>
                   ))}
-                </article>
-              ))
-            )}
+                </div>
+              ) : filteredMessages.length === 0 ? (
+                <div className="m-auto max-w-md w-full rounded-3xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] p-8 text-center space-y-2.5 shadow-[var(--cloak-card-shadow)]">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--cloak-text-dim)]">
+                    Direct Room Ledger
+                  </div>
+                  <p className="font-editorial italic text-xl text-[var(--cloak-text)]">
+                    {messages.length === 0
+                      ? 'An unlogged room awaits.'
+                      : 'Nothing matches that filter.'}
+                  </p>
+                  <p className="text-xs text-[var(--cloak-text-muted)] leading-relaxed">
+                    {messages.length === 0
+                      ? 'No local messages visible in this channel.'
+                      : 'No local messages match your search filter.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 pb-2 text-[11px] text-[var(--cloak-text-dim)]">
+                    <div className="h-px flex-1 bg-[var(--cloak-border)]" />
+                    <span className="font-editorial italic">
+                      {hideRoomTitle ? 'Protected Channel' : activeRoom?.name ?? 'Conversation'} · E2EE Verified
+                    </span>
+                    <div className="h-px flex-1 bg-[var(--cloak-border)]" />
+                  </div>
+
+                  {filteredMessages.map((m) => {
+                    const isOwn = m.senderDeviceId === status?.deviceId;
+                    const senderName = isOwn
+                      ? (status?.displayName ?? 'You')
+                      : (peers.find((p) => p.deviceId === m.senderDeviceId)?.displayName ?? m.senderDeviceId.slice(0, 8));
+                    return (
+                      <article
+                        key={m.id}
+                        data-message-id={m.id}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({ msg: m, x: e.clientX, y: e.clientY });
+                        }}
+                        className={`group cloak-msg-enter rounded-2xl border p-3.5 sm:p-4 space-y-2 cloak-transition ${
+                          isOwn
+                            ? 'bg-[var(--cloak-bg-sage-soft)]/55 border-[var(--cloak-accent-border)]'
+                            : 'bg-[var(--cloak-bg-card)] border-[var(--cloak-border)] hover:border-[var(--cloak-border-strong)]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-2 min-w-0">
+                            <Avatar
+                              size="sm"
+                              name={senderName}
+                              color={isOwn ? '#243C34' : '#5F6F63'}
+                            />
+                            <strong className="text-[var(--cloak-text)] font-semibold">
+                              {senderName}
+                            </strong>
+                            <span className="font-mono-tabular text-[11px] text-[var(--cloak-text-dim)]">
+                              {new Date(m.createdAt).toLocaleTimeString()}
+                            </span>
+                            {m.signatureVerified && (
+                              <span title="Ed25519 signature verified" className="text-[var(--cloak-success-text)] text-[10px] font-medium">
+                                ✓ Signed
+                              </span>
+                            )}
+                            {m.viewedAt ? (
+                              <span className="text-[10px] text-[var(--cloak-text-muted)] inline-flex items-center gap-0.5" title="Viewed in local viewport">
+                                <Eye className="w-3 h-3" /> Viewed
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-[var(--cloak-info-text)] inline-flex items-center gap-0.5" title="Not yet marked viewed">
+                                <EyeOff className="w-3 h-3" /> Unread
+                              </span>
+                            )}
+                            {m.expireOnLeave && (
+                              <span className="text-[10px] text-[var(--cloak-warn-text)]">· On-leave</span>
+                            )}
+                            {m.expireAfterViewSeconds != null && (
+                              <span className="text-[10px] text-[var(--cloak-warn-text)]">· {m.expireAfterViewSeconds}s after view</span>
+                            )}
+                            {m.expiresAt && (
+                              <span className="text-[10px] text-[var(--cloak-warn-text)]">
+                                · Exp {new Date(m.expiresAt).toLocaleTimeString()}
+                              </span>
+                            )}
+                            {m.editedAt && <span className="text-[10px] text-[var(--cloak-text-muted)]">(edited)</span>}
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0 opacity-85 group-hover:opacity-100 focus-within:opacity-100">
+                            <button
+                              type="button"
+                              aria-label="Reply to message"
+                              title="Reply"
+                              onClick={() => {
+                                setEditingMsg(null);
+                                setReplyQuote({
+                                  id: m.id,
+                                  sender: senderName,
+                                  snippet: m.text.slice(0, 96).replace(/\s+/g, ' '),
+                                });
+                              }}
+                              className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
+                            >
+                              <CornerUpLeft className="w-3.5 h-3.5" />
+                            </button>
+                            {isOwn && (
+                              <button
+                                type="button"
+                                aria-label="Edit message"
+                                title="Edit"
+                                onClick={() => {
+                                  setReplyQuote(null);
+                                  setEditingMsg(m);
+                                  setComposerText(m.text);
+                                }}
+                                className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              aria-label="Message options"
+                              title="More actions"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setContextMenu({ msg: m, x: rect.left, y: rect.bottom + 6 });
+                              }}
+                              className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer"
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Delete message for everyone"
+                              title="Delete for everyone"
+                              onClick={() =>
+                                void p2pApi.deleteMessage(m.roomId, m.id, 'everyone').then(() => refreshMessages(m.roomId, m.channelId))
+                              }
+                              className="p-1 rounded-full text-[var(--cloak-text-muted)] hover:text-[var(--cloak-danger-text)] hover:bg-[var(--cloak-danger-soft)] cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="pl-9 space-y-2">
+                          <SafeMarkdown text={m.text} />
+                          {m.attachments.map((att) => (
+                            <P2pAttachmentItem
+                              key={att.id}
+                              attachment={att}
+                              onDownload={handleDownloadAttachment}
+                            />
+                          ))}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {activeRoomId && activeChannelId && !isMasked && (
-          <form onSubmit={handleSend} className="p-3 border-t border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)] flex flex-wrap items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              onChange={(e) => {
-                if (e.target.files) setPendingFiles(Array.from(e.target.files));
-                e.target.value = '';
-              }}
-              className="sr-only"
-            />
+          <div className="px-4 sm:px-8 pb-4 pt-2 border-t border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)]/70">
+            <div className="max-w-[920px] mx-auto w-full space-y-2">
+              {(replyQuote || editingMsg || pendingFiles.length > 0 || uploadedAttIds.length > 0) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] px-3.5 py-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    {replyQuote && (
+                      <span className="inline-flex items-center gap-1.5 text-[var(--cloak-text-body)] truncate">
+                        <CornerUpLeft className="w-3.5 h-3.5 text-[var(--cloak-accent-text)] shrink-0" />
+                        <span>
+                          Replying to <strong>{replyQuote.sender}</strong>: {replyQuote.snippet}
+                        </span>
+                      </span>
+                    )}
+                    {editingMsg && (
+                      <span className="inline-flex items-center gap-1.5 text-[var(--cloak-accent-text)] font-medium">
+                        <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                        Editing encrypted message
+                      </span>
+                    )}
+                    {pendingFiles.map((f, idx) => (
+                      <span
+                        key={`${f.name}-${idx}`}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--cloak-bg-surface)] border border-[var(--cloak-border)] px-2.5 py-0.5 text-[11px]"
+                      >
+                        {f.name}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${f.name}`}
+                          onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-[var(--cloak-text-muted)] hover:text-[var(--cloak-danger-text)] cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                    {uploadedAttIds.length > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--cloak-bg-sage-soft)] border border-[var(--cloak-accent-border)] px-2.5 py-0.5 text-[11px] text-[var(--cloak-accent-text)]">
+                        {uploadedAttIds.length} native encrypted file(s) staged
+                      </span>
+                    )}
+                  </div>
+                  {(replyQuote || editingMsg) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplyQuote(null);
+                        setEditingMsg(null);
+                        setComposerText('');
+                      }}
+                      className="text-[11px] text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <form
+                onSubmit={handleSend}
+                className="rounded-2xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-card-shadow)] p-2 flex flex-wrap items-center gap-2"
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={(e) => {
+                    if (e.target.files) setPendingFiles(Array.from(e.target.files));
+                    e.target.value = '';
+                  }}
+                  className="sr-only"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleNativeOrBrowserPick()}
+                  aria-label="Attach P2P file"
+                  className="p-2 rounded-full bg-[var(--cloak-bg-surface)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-elevated)] cursor-pointer cloak-transition"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                <input
+                  value={composerText}
+                  onChange={(e) => setComposerText(e.target.value)}
+                  placeholder={
+                    editingMsg
+                      ? 'Edit encrypted message...'
+                      : pendingFiles.length + uploadedAttIds.length > 0
+                        ? `Message (${pendingFiles.length + uploadedAttIds.length} file(s) staged)...`
+                        : 'Direct encrypted message (stored in local SQLite)...'
+                  }
+                  className="flex-1 min-w-[180px] rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-4 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+                />
+                {!editingMsg && (
+                  <select
+                    value={disappearPreset}
+                    onChange={(e) => setDisappearPreset(e.target.value)}
+                    aria-label="Disappearing preset"
+                    className="rounded-full bg-[var(--cloak-bg-surface)] border border-[var(--cloak-border)] px-3 py-2 text-xs text-[var(--cloak-text-body)]"
+                  >
+                    <option value="off">Persist (Local)</option>
+                    <option value="on_leave">On Leave Chat</option>
+                    <option value="after_view:30">30s After View</option>
+                    <option value="after_view:300">5m After View</option>
+                    {DISAPPEARING_MESSAGE_OPTIONS.filter((o) => o.seconds !== null).map((o) => (
+                      <option key={o.label} value={String(o.seconds)}>
+                        {o.label}
+                      </option>
+                    ))}
+                    <option value="custom">Custom (sec)...</option>
+                  </select>
+                )}
+                {!editingMsg && disappearPreset === 'custom' && (
+                  <input
+                    type="number"
+                    min={5}
+                    value={customSeconds}
+                    onChange={(e) => setCustomSeconds(e.target.value)}
+                    aria-label="Custom disappearing seconds"
+                    className="w-20 rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-xs text-[var(--cloak-text)]"
+                  />
+                )}
+                <Button type="submit" variant="primary" size="sm">
+                  <Send className="w-3.5 h-3.5" /> {editingMsg ? 'Save' : 'Send'}
+                </Button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Message Floating Context Menu */}
+        {contextMenu && !isMasked && (
+          <div
+            role="menu"
+            style={{
+              left: Math.min(contextMenu.x, Math.max(12, window.innerWidth - 210)),
+              top: Math.min(contextMenu.y, Math.max(12, window.innerHeight - 230)),
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="cloak-menu-enter fixed z-50 w-48 rounded-2xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-1.5 text-xs space-y-0.5"
+          >
             <button
               type="button"
-              onClick={() => void handleNativeOrBrowserPick()}
-              aria-label="Attach P2P file"
-              className="p-2 rounded-[7px] bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)] text-[var(--cloak-text-body)] hover:bg-[var(--cloak-bg-hover)] cursor-pointer"
+              role="menuitem"
+              onClick={() => {
+                const m = contextMenu.msg;
+                const sender =
+                  m.senderDeviceId === status?.deviceId
+                    ? (status?.displayName ?? 'You')
+                    : (peers.find((p) => p.deviceId === m.senderDeviceId)?.displayName ?? m.senderDeviceId.slice(0, 8));
+                setEditingMsg(null);
+                setReplyQuote({ id: m.id, sender, snippet: m.text.slice(0, 96).replace(/\s+/g, ' ') });
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--cloak-bg-hover)] text-[var(--cloak-text)] flex items-center gap-2 cursor-pointer"
             >
-              <Paperclip className="w-4 h-4" />
+              <CornerUpLeft className="w-3.5 h-3.5" /> Reply Quote
             </button>
-            <input
-              value={composerText}
-              onChange={(e) => setComposerText(e.target.value)}
-              placeholder={
-                pendingFiles.length + uploadedAttIds.length > 0
-                  ? `Message (${pendingFiles.length + uploadedAttIds.length} file(s) staged)...`
-                  : 'Direct encrypted message (stored in local SQLite)...'
-              }
-              className="flex-1 min-w-[180px] rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
-            />
-            <select
-              value={disappearPreset}
-              onChange={(e) => setDisappearPreset(e.target.value)}
-              aria-label="Disappearing preset"
-              className="rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-2 text-xs text-[var(--cloak-text-body)]"
-            >
-              <option value="off">Persist (Local)</option>
-              <option value="on_leave">On Leave Chat</option>
-              <option value="after_view:30">30s After View</option>
-              <option value="after_view:300">5m After View</option>
-              {DISAPPEARING_MESSAGE_OPTIONS.filter((o) => o.seconds !== null).map((o) => (
-                <option key={o.label} value={String(o.seconds)}>
-                  {o.label}
-                </option>
-              ))}
-              <option value="custom">Custom (sec)...</option>
-            </select>
-            {disappearPreset === 'custom' && (
-              <input
-                type="number"
-                min={5}
-                value={customSeconds}
-                onChange={(e) => setCustomSeconds(e.target.value)}
-                aria-label="Custom disappearing seconds"
-                className="w-20 rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-2 text-xs text-[var(--cloak-text)]"
-              />
+            {contextMenu.msg.senderDeviceId === status?.deviceId && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  const m = contextMenu.msg;
+                  setReplyQuote(null);
+                  setEditingMsg(m);
+                  setComposerText(m.text);
+                  setContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--cloak-bg-hover)] text-[var(--cloak-text)] flex items-center gap-2 cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" /> Edit Message
+              </button>
             )}
-            <Button type="submit" variant="primary" size="sm">
-              <Send className="w-3.5 h-3.5" /> Send
-            </Button>
-          </form>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                void navigator.clipboard.writeText(contextMenu.msg.text);
+                setInfoBanner('Copied message text to clipboard.');
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--cloak-bg-hover)] text-[var(--cloak-text)] flex items-center gap-2 cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5" /> Copy Text
+            </button>
+            <div className="my-1 border-t border-[var(--cloak-border)]" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const m = contextMenu.msg;
+                setContextMenu(null);
+                void p2pApi.deleteMessage(m.roomId, m.id, 'me').then(() => refreshMessages(m.roomId, m.channelId));
+              }}
+              className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--cloak-danger-soft)] text-[var(--cloak-warn-text)] flex items-center gap-2 cursor-pointer"
+            >
+              <EyeOff className="w-3.5 h-3.5" /> Delete for Me
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const m = contextMenu.msg;
+                setContextMenu(null);
+                void p2pApi.deleteMessage(m.roomId, m.id, 'everyone').then(() => refreshMessages(m.roomId, m.channelId));
+              }}
+              className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--cloak-danger-soft)] text-[var(--cloak-danger-text)] flex items-center gap-2 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete for Everyone
+            </button>
+          </div>
         )}
       </main>
 
@@ -2193,7 +2575,12 @@ export function P2pWorkspacePage() {
         }}
       />
 
-      <ModalDialog open={exportOpen} onClose={() => setExportOpen(false)} title="Export Encrypted Local Archive (.cloakexport)">
+      <ModalDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Export Encrypted Local Archive (.cloakexport)"
+        description="Creates an offline encrypted archive bundled with verified local attachments."
+      >
         <form onSubmit={handleExportLocal} className="space-y-3">
           {exportErr && <div className="text-xs text-[var(--cloak-danger-text)]">{exportErr}</div>}
           <input
@@ -2201,16 +2588,16 @@ export function P2pWorkspacePage() {
             value={exportPw}
             onChange={(e) => setExportPw(e.target.value)}
             placeholder="Strong export password (min 8 chars)"
-            className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+            className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-4 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
           />
           <input
             type="password"
             value={exportPw2}
             onChange={(e) => setExportPw2(e.target.value)}
             placeholder="Confirm password"
-            className="w-full rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+            className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-4 py-2 text-sm text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
           />
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" type="button" onClick={() => setExportOpen(false)}>
               Cancel
             </Button>
@@ -2220,6 +2607,28 @@ export function P2pWorkspacePage() {
           </div>
         </form>
       </ModalDialog>
+
+      <ConfirmDialog
+        open={burnConfirmOpen}
+        onCancel={() => setBurnConfirmOpen(false)}
+        onConfirm={() => {
+          if (!activeRoomId) return;
+          setBurnBusy(true);
+          void p2pApi
+            .burnRoom(activeRoomId)
+            .then(async () => {
+              setBurnConfirmOpen(false);
+              if (activeChannelId) await refreshMessages(activeRoomId, activeChannelId);
+            })
+            .catch((e) => setErrorBanner(e instanceof Error ? e.message : 'Burn room failed'))
+            .finally(() => setBurnBusy(false));
+        }}
+        title="Burn Room History?"
+        description="This permanently erases local messages in this room and increments its cryptographic epoch."
+        confirmLabel="Burn Room History"
+        destructive
+        busy={burnBusy}
+      />
     </div>
   );
 }

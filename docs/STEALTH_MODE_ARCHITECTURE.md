@@ -24,3 +24,4 @@
 3. **Separation of Visual Concealment vs. Local Erasure:**
    - Stealth Mode manages *visual cover* and *UI locking*; Ghost Mode manages *local SQLite and attachment blob erasure*.
    - A trigger can conceal to the PDF reader while keeping all local messages intact (`LocalDeletionAction::KeepAll`), or combine concealment with `DeleteViewedLocal` / `DeleteOpenConversation` / `DeleteAllLocal` through `PrivacyRule` or timer expiry actions.
+

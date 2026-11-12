@@ -154,10 +154,14 @@ mod win {
             let src_h = (mon.rect.bottom - mon.rect.top).max(1);
             let (dst_w, dst_h) = scale_dims(src_w, src_h, max_width);
             unsafe {
-                let desk_hwnd = GetDesktopWindow();
-                let src_dc = GetDC(desk_hwnd);
+                let mut src_dc = GetDC(std::ptr::null_mut());
+                let mut release_hwnd: HWND = std::ptr::null_mut();
                 if src_dc.is_null() {
-                    return Err("GetDC(desktop) failed".into());
+                    release_hwnd = GetDesktopWindow();
+                    src_dc = GetDC(release_hwnd);
+                }
+                if src_dc.is_null() {
+                    return Err("GetDC(screen) failed".into());
                 }
                 let res = capture_dc_region_to_bmp(
                     src_dc,
@@ -169,7 +173,7 @@ mod win {
                     dst_h,
                     None,
                 );
-                ReleaseDC(desk_hwnd, src_dc);
+                ReleaseDC(release_hwnd, src_dc);
                 return res;
             }
         }
@@ -285,6 +289,9 @@ mod win {
         bmi.bmiHeader.biBitCount = 32;
         bmi.bmiHeader.biCompression = BI_RGB;
 
+        // Win32 GDI requirement: bitmap must NOT be selected into mem_dc when calling GetDIBits
+        unsafe { SelectObject(mem_dc, old_dst) };
+
         let scanlines = if blt_ok != 0 {
             unsafe {
                 GetDIBits(
@@ -302,7 +309,6 @@ mod win {
         };
 
         unsafe {
-            SelectObject(mem_dc, old_dst);
             DeleteObject(dst_bmp);
             DeleteDC(mem_dc);
             if let Some(b) = work_bmp {
@@ -311,6 +317,11 @@ mod win {
             }
         }
 
+        if blt_ok == 0 {
+            return Err(
+                "StretchBlt failed capturing screen region (desktop locked or protected?)".into(),
+            );
+        }
         if scanlines == 0 {
             return Err("GetDIBits failed capturing screen pixels".into());
         }

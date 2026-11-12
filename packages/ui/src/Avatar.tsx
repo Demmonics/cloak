@@ -9,38 +9,37 @@ export interface AvatarProps {
 }
 
 const SIZES = {
-  sm: 'w-7 h-7 text-xs',
-  md: 'w-9 h-9 text-sm',
-  lg: 'w-12 h-12 text-lg',
+  sm: 'w-7 h-7 text-[11px]',
+  md: 'w-9 h-9 text-xs',
+  lg: 'w-12 h-12 text-base',
 };
 
 const STATUS_COLOR = {
-  online: 'bg-[#22c55e]',
-  idle: 'bg-[#f59e0b]',
-  dnd: 'bg-[#ef4444]',
-  offline: 'bg-[#64748b]',
+  online: 'bg-[var(--cloak-success)]',
+  idle: 'bg-[var(--cloak-warn)]',
+  dnd: 'bg-[var(--cloak-danger)]',
+  offline: 'bg-[var(--cloak-text-dim)]',
 };
 
-export function Avatar({ name, color = '#7c6cff', emoji, status, size = 'md' }: AvatarProps) {
+export function Avatar({ name, color = '#4f6253', emoji, status, size = 'md' }: AvatarProps) {
   const initial = (name.trim().slice(0, 2) || '?').toUpperCase();
-  const safeColor = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : '#7c6cff';
+  const safeColor = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : '#4f6253';
 
   return (
     <span className="relative inline-flex shrink-0">
       <span
         aria-hidden="true"
         style={{ backgroundColor: safeColor }}
-        className={`${SIZES[size]} rounded-xl inline-flex items-center justify-center font-semibold text-white select-none border border-white/10`}
+        className={`${SIZES[size]} rounded-full inline-flex items-center justify-center font-editorial font-normal tracking-wide text-[#f2f1ed] select-none border border-[var(--cloak-border-strong)] shadow-2xs`}
       >
         {emoji || initial}
       </span>
       {status && (
         <span
           title={status}
-          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#141722] ${STATUS_COLOR[status]}`}
+          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--cloak-bg-card)] ${STATUS_COLOR[status]}`}
         />
       )}
     </span>
   );
 }
-

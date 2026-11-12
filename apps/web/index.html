@@ -3,13 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
     <script>
       try {
         var s = localStorage.getItem('color-scheme');
-        if (s === 'light' || s === 'dark') {
-          var m = document.querySelector('meta[name="color-scheme"]');
-          if (m) m.setAttribute('content', s);
+        var m = document.querySelector('meta[name="color-scheme"]');
+        if (m) {
+          if (s === 'dark') m.setAttribute('content', 'dark');
+          else if (s === 'system') m.setAttribute('content', 'light dark');
+          else m.setAttribute('content', 'light');
         }
       } catch (e) {}
     </script>

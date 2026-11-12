@@ -109,11 +109,11 @@ mod imp {
                     && (dy < 0.18 || (dy - 0.18) * 1.15 + dx.abs() < 0.56);
                 let in_visor = in_shield && dy > -0.22 && dy < 0.04 && dx.abs() < 0.32;
                 let (r, g, b) = if in_visor {
-                    (56, 189, 248)
+                    (14, 165, 233)
                 } else if in_shield {
-                    (124, 108, 255)
+                    (45, 212, 191)
                 } else {
-                    (15, 18, 30)
+                    (13, 17, 23)
                 };
                 rgba[idx] = r;
                 rgba[idx + 1] = g;

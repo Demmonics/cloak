@@ -195,6 +195,57 @@ impl VaultSecretBox {
         String::from_utf8(pt)
             .map_err(|_| P2pError::Crypto("unsealed vault field is not valid UTF-8".into()))
     }
+
+    /// Seals raw binary attachment chunks under the DPAPI-protected vault master key.
+    pub fn seal_bytes(&self, label: &str, plaintext: &[u8]) -> P2pResult<Vec<u8>> {
+        const MAGIC: &[u8; 8] = b"CLKBLOB1";
+        if plaintext.starts_with(MAGIC) {
+            return Ok(plaintext.to_vec());
+        }
+        let cipher = XChaCha20Poly1305::new(self.master_key.as_ref().into());
+        let mut nonce = [0u8; 24];
+        OsRng.fill_bytes(&mut nonce);
+        let aad = format!("cloak-vault-blob-v1:{label}");
+        let ct = cipher
+            .encrypt(
+                &XNonce::from(nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: aad.as_bytes(),
+                },
+            )
+            .map_err(|e| P2pError::Crypto(format!("vault blob seal failed: {e}")))?;
+        let mut out = Vec::with_capacity(MAGIC.len() + 24 + ct.len());
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&nonce);
+        out.extend_from_slice(&ct);
+        Ok(out)
+    }
+
+    /// Unseals a binary attachment chunk (supports pre-hardening unsealed chunks read-only).
+    pub fn open_bytes(&self, label: &str, raw: &[u8]) -> P2pResult<Vec<u8>> {
+        const MAGIC: &[u8; 8] = b"CLKBLOB1";
+        let Some(rest) = raw.strip_prefix(MAGIC) else {
+            return Ok(raw.to_vec());
+        };
+        if rest.len() <= 24 {
+            return Err(P2pError::Crypto("sealed vault blob truncated".into()));
+        }
+        let (nonce, ct) = rest.split_at(24);
+        let mut nonce_arr = [0u8; 24];
+        nonce_arr.copy_from_slice(nonce);
+        let cipher = XChaCha20Poly1305::new(self.master_key.as_ref().into());
+        let aad = format!("cloak-vault-blob-v1:{label}");
+        cipher
+            .decrypt(
+                &XNonce::from(nonce_arr),
+                Payload {
+                    msg: ct,
+                    aad: aad.as_bytes(),
+                },
+            )
+            .map_err(|_| P2pError::Crypto(format!("vault blob unseal failed for {label}")))
+    }
 }
 
 #[cfg(target_os = "windows")]

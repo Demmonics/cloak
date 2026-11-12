@@ -30,6 +30,7 @@ pub struct DesktopState {
     pub data_dir: PathBuf,
     pub session_token: String,
     pub expected_http_port: std::sync::Arc<std::sync::atomic::AtomicU16>,
+    pub enable_test_clock: bool,
 }
 
 #[derive(Serialize)]
@@ -918,6 +919,16 @@ async fn stealth_test_clock_advance(
     State(st): State<DesktopState>,
     Json(req): Json<ClockAdvanceReq>,
 ) -> Response {
+    if !st.enable_test_clock {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ErrorBody {
+                code: "TEST_CLOCK_DISABLED",
+                error: "Test clock manipulation is disabled outside explicit test mode".into(),
+            }),
+        )
+            .into_response();
+    }
     match st.node.stealth().advance_clock_ms(req.delta_ms) {
         Ok(boot) => Json(boot).into_response(),
         Err(err) => map_p2p_error(err),
@@ -1361,12 +1372,14 @@ mod tests {
             data_dir: dir_a.clone(),
             session_token: tok_a.clone(),
             expected_http_port: Arc::new(AtomicU16::new(addr_a.port())),
+            enable_test_clock: false,
         });
         let app_b = build_router(DesktopState {
             node: node_b.clone(),
             data_dir: dir_b.clone(),
             session_token: tok_b.clone(),
             expected_http_port: Arc::new(AtomicU16::new(addr_b.port())),
+            enable_test_clock: false,
         });
 
         let srv_a = tokio::spawn(async move {
@@ -1552,6 +1565,7 @@ mod tests {
             data_dir: dir.clone(),
             session_token: tok.clone(),
             expected_http_port: Arc::new(AtomicU16::new(addr.port())),
+            enable_test_clock: false,
         });
         let srv = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -1579,6 +1593,18 @@ mod tests {
             assert!(body.contains("STEALTH_LOCKED"));
             assert!(!body.contains("Top Secret Ops"));
         }
+
+        // Production default MUST disable /stealth/test-clock-advance (403 TEST_CLOCK_DISABLED)
+        let test_clock_blocked = client
+            .post(format!("http://{addr}/p2p/v1/stealth/test-clock-advance"))
+            .bearer_auth(&tok)
+            .json(&serde_json::json!({ "deltaMs": 60000 }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(test_clock_blocked.status(), reqwest::StatusCode::FORBIDDEN);
+        let tc_body = test_clock_blocked.text().await.unwrap();
+        assert!(tc_body.contains("TEST_CLOCK_DISABLED"));
 
         // Bootstrap & PDF endpoints MUST remain available cleanly while locked
         let boot: serde_json::Value = client

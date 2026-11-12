@@ -7,6 +7,7 @@ import {
   MonitorOff,
   MonitorUp,
   PhoneOff,
+  Radio,
   RefreshCw,
   Volume2,
   VolumeX,
@@ -216,29 +217,36 @@ export function P2pMediaDock({
     <section
       ref={stageRef}
       aria-label="Direct WebRTC Media Stage"
-      className={`mx-4 mt-3 rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-3 space-y-3 ${
-        theater ? 'min-h-[380px]' : ''
+      className={`cloak-panel-enter mx-4 sm:mx-6 mt-3 rounded-2xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-card-shadow)] p-3.5 space-y-3 ${
+        theater ? 'min-h-[400px]' : ''
       }`}
     >
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              iceStatus === 'connected' || iceStatus === 'completed'
-                ? 'bg-[#22c55e]'
-                : iceStatus === 'failed' || iceStatus === 'disconnected'
-                  ? 'bg-[#f59e0b]'
-                  : 'bg-[#0ea5e9]'
-            }`}
-          />
-          <span className="font-semibold text-[var(--cloak-text)]">
-            Direct WebRTC {screenSharing ? `· Screen (${screenLabel ?? screenQuality})` : videoOn ? '· Video + Audio' : '· Voice'}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs pb-2 border-b border-[var(--cloak-border)]">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] px-2.5 py-1">
+            <span
+              className={`inline-block w-2 h-2 rounded-full ${
+                iceStatus === 'connected' || iceStatus === 'completed'
+                  ? 'bg-[var(--cloak-success)]'
+                  : iceStatus === 'failed' || iceStatus === 'disconnected'
+                    ? 'bg-[var(--cloak-warn)]'
+                    : 'bg-[var(--cloak-accent-blue)]'
+              }`}
+            />
+            <span className="font-editorial text-sm text-[var(--cloak-text)] tracking-tight">
+              Direct WebRTC {screenSharing ? `· Screen (${screenLabel ?? screenQuality})` : videoOn ? '· Video + Audio' : '· Voice'}
+            </span>
           </span>
-          <span className="text-[var(--cloak-text-muted)]">ICE: {iceStatus}</span>
+          <span className="font-mono-tabular text-[11px] text-[var(--cloak-text-muted)] px-2 py-0.5 rounded-full bg-[var(--cloak-bg-elevated)] border border-[var(--cloak-border)]">
+            ICE: {iceStatus}
+          </span>
           {rtpStats.bytesReceived > 0 && (
-            <span className="text-[var(--cloak-success-text)] font-mono text-[11px]" data-testid="rtp-stats">
+            <span
+              className="text-[var(--cloak-success-text)] font-mono-tabular text-[11px] px-2 py-0.5 rounded-full bg-[var(--cloak-success-soft)] border border-[var(--cloak-success-border)]"
+              data-testid="rtp-stats"
+            >
               RX {(rtpStats.bytesReceived / 1024).toFixed(1)} KiB
               {rtpStats.frameWidth > 0 ? ` · ${rtpStats.frameWidth}x${rtpStats.frameHeight}@${rtpStats.framesPerSecond.toFixed(0)}fps` : ''}
             </span>
@@ -283,8 +291,8 @@ export function P2pMediaDock({
         </div>
       </div>
 
-      <div className={`grid gap-3 ${theater ? 'grid-cols-1 lg:grid-cols-[1fr_220px]' : 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_190px]'}`}>
-        <div className={`relative rounded-[10px] bg-black border border-[var(--cloak-border)] overflow-hidden flex items-center justify-center ${theater ? 'h-80' : 'h-48'}`}>
+      <div className={`grid gap-3 ${theater ? 'grid-cols-1 lg:grid-cols-[1fr_230px]' : 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_205px]'}`}>
+        <div className={`relative rounded-2xl bg-[#0D1815] border border-[var(--cloak-border-strong)] overflow-hidden flex items-center justify-center ${theater ? 'h-80' : 'h-48'}`}>
           <video
             ref={remoteVideoRef}
             data-testid="remote-video"
@@ -294,14 +302,17 @@ export function P2pMediaDock({
             className="w-full h-full object-contain"
           />
           {!hasRemoteVideo && (
-            <div className="absolute inset-0 flex items-center justify-center text-xs text-[#94a3b8]">
-              Waiting for remote video/screen track (direct P2P audio active)...
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-xs text-[#9DB0A6] px-4 text-center">
+              <Radio className="w-4 h-4 opacity-70" />
+              <span className="font-editorial italic text-sm text-[#D6DDD7]">
+                Waiting for remote video/screen track (direct P2P audio active)...
+              </span>
             </div>
           )}
         </div>
 
         <div className="flex flex-col justify-between gap-2 text-[11px]">
-          <div className="relative h-28 rounded-[8px] bg-black border border-[var(--cloak-border)] overflow-hidden">
+          <div className="relative h-28 rounded-xl bg-[#0D1815] border border-[var(--cloak-border-strong)] overflow-hidden">
             <video
               ref={localPreviewRef}
               data-testid="local-preview"
@@ -310,17 +321,17 @@ export function P2pMediaDock({
               muted
               className="w-full h-full object-cover"
             />
-            <span className="absolute bottom-1 left-1.5 px-1.5 py-0.5 rounded bg-black/75 text-[10px] text-white">
+            <span className="absolute bottom-1.5 left-2 px-2 py-0.5 rounded-full bg-[#0E1A18]/85 border border-white/15 text-[10px] text-[#EEEDE9] tracking-wide">
               Self Preview
             </span>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <select
               aria-label="Microphone device"
               value={selectedMicId}
               onChange={(e) => onSelectMic(e.target.value)}
-              className="w-full rounded-[6px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-1.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
+              className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
             >
               <option value="">Default Mic ({mics.length})</option>
               {mics.map((d, idx) => (
@@ -333,7 +344,7 @@ export function P2pMediaDock({
               aria-label="Camera device"
               value={selectedCamId}
               onChange={(e) => onSelectCam(e.target.value)}
-              className="w-full rounded-[6px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-1.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
+              className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
             >
               <option value="">Default Camera ({cams.length})</option>
               {cams.map((d, idx) => (
@@ -347,7 +358,7 @@ export function P2pMediaDock({
                 aria-label="Speaker output device"
                 value={selectedSpeakerId}
                 onChange={(e) => onSelectSpeaker(e.target.value)}
-                className="w-full rounded-[6px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-1.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
+                className="w-full rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1 text-[11px] text-[var(--cloak-text-body)]"
               >
                 <option value="">Default Speaker ({speakers.length})</option>
                 {speakers.map((d, idx) => (
@@ -366,19 +377,20 @@ export function P2pMediaDock({
         open={pickerOpen}
         onClose={() => setPickerOpenWithGuard(false)}
         title="Share Screen or Application Window"
+        description="Choose a native display or window preview below, or delegate capture to Chromium's system picker."
         wide
       >
-        <div className="space-y-3 text-xs text-[var(--cloak-text-body)]">
+        <div className="space-y-4 text-xs text-[var(--cloak-text-body)]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <label htmlFor="screen-preset-select" className="text-[var(--cloak-text-muted)]">
+              <label htmlFor="screen-preset-select" className="text-[var(--cloak-text-muted)] font-medium">
                 Stream Quality:
               </label>
               <select
                 id="screen-preset-select"
                 value={screenQuality}
                 onChange={(e) => onChangeScreenQuality(e.target.value as ScreenQualityPreset)}
-                className="rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-[var(--cloak-text)]"
+                className="rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1 text-[var(--cloak-text)]"
               >
                 {Object.entries(SCREEN_PRESETS).map(([key, spec]) => (
                   <option key={key} value={key}>
@@ -394,44 +406,48 @@ export function P2pMediaDock({
 
           {pickerErr && <div className="text-[var(--cloak-danger-text)]">{pickerErr}</div>}
 
-          <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-[248px_1fr] gap-3.5">
             <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
               {sources.map((src) => (
                 <button
                   key={src.id}
                   type="button"
                   onClick={() => setSelectedSourceId(src.id)}
-                  className={`w-full text-left px-2.5 py-2 rounded-[7px] border cursor-pointer transition-colors ${
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border cursor-pointer cloak-transition ${
                     src.id === selectedSourceId
-                      ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)] text-[var(--cloak-text)]'
-                      : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] text-[var(--cloak-text-body)] hover:border-[var(--cloak-border-strong)]'
+                      ? 'border-[var(--cloak-accent-border)] bg-[var(--cloak-bg-active)] text-[var(--cloak-text)] shadow-2xs'
+                      : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] text-[var(--cloak-text-body)] hover:border-[var(--cloak-border-strong)]'
                   }`}
                 >
                   <div className="font-medium truncate">{src.title}</div>
-                  <div className="text-[10px] text-[var(--cloak-text-muted)] uppercase">
+                  <div className="text-[10px] font-mono-tabular text-[var(--cloak-text-muted)] uppercase mt-0.5">
                     {src.kind} · {src.width}x{src.height}
                   </div>
                 </button>
               ))}
               {sources.length === 0 && !loadingSources && (
-                <div className="text-[var(--cloak-text-muted)] p-2">No native desktop capture sources enumerated.</div>
+                <div className="text-[var(--cloak-text-muted)] p-3 rounded-xl border border-dashed border-[var(--cloak-border)]">
+                  No native desktop capture sources enumerated.
+                </div>
               )}
             </div>
 
-            <div className="rounded-[10px] border border-[var(--cloak-border)] bg-black p-2 flex flex-col items-center justify-center min-h-[200px]">
+            <div className="rounded-2xl border border-[var(--cloak-border-strong)] bg-[#0D1815] p-3 flex flex-col items-center justify-center min-h-[210px]">
               {previewUrl ? (
                 <img
                   src={previewUrl}
                   alt={selectedSource?.title ?? 'Pre-live screen share preview'}
-                  className="max-h-56 w-full object-contain rounded"
+                  className="max-h-56 w-full object-contain rounded-lg"
                 />
               ) : (
-                <div className="text-[#94a3b8]">Select a display or window to preview before going live...</div>
+                <div className="font-editorial italic text-sm text-[#9DB0A6]">
+                  Select a display or window to preview before going live...
+                </div>
               )}
             </div>
           </div>
 
-          <div className="flex flex-wrap justify-between gap-2 pt-2 border-t border-[var(--cloak-border)]">
+          <div className="flex flex-wrap justify-between gap-2 pt-3 border-t border-[var(--cloak-border)]">
             <Button
               type="button"
               variant="secondary"

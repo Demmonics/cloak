@@ -26,3 +26,4 @@
 - `stealth_runtime_checkpoint` persists `away_deadline_ms`, `locked`, and `active_surface` into SQLite whenever runtime state changes.
 - On cold boot (`StealthController::new`), overdue deadlines elapsed while powered off or closed are detected and evaluated (`BackgroundAwayTimeout`) immediately rather than silently dropped.
 - `test_clock_offset_ms` (`POST /p2p/v1/stealth/test-clock-advance`) shifts controller time deterministically for fast, flake-free unit and Playwright verification (e.g., advancing `+65_000 ms` across a `60s` away timer).
+

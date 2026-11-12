@@ -242,7 +242,7 @@ export function MessageComposer({
 
   if (!canSend) {
     return (
-      <div className="px-4 py-3 border-t border-[#1f2435] bg-[#12151f] text-xs text-[#9aa3b8]">
+      <div className="px-4 py-3 border-t border-[var(--cloak-border)] bg-[var(--cloak-bg-sidebar)] text-xs text-[var(--cloak-text-muted)]">
         Read-only access in #{channelName}. You can decrypt and export authorized history.
       </div>
     );
@@ -339,9 +339,9 @@ export function MessageComposer({
               title={recording ? 'Stop & send encrypted voice note' : 'Record voice note'}
               aria-label={recording ? 'Stop recording' : 'Record voice note'}
               onClick={() => void toggleVoiceRecording()}
-              className={`p-2 rounded-[7px] cursor-pointer ${
+              className={`p-2 rounded-full cursor-pointer ${
                 recording
-                  ? 'bg-[#dc2626] text-white'
+                  ? 'bg-[var(--cloak-danger)] text-white'
                   : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
               }`}
             >

@@ -14,3 +14,4 @@ Honest documentation of threat-model boundaries observed in the current Phase 10
    - `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)` (`0x11`) blocks screen capture of the Cloak window when enabled (`captureProtection = true` in Ghost settings), verified on Windows via `GetWindowDisplayAffinity`. OS screen readers, elevated kernel drivers, or physical cameras pointed at the monitor cannot be blocked by User32 flags.
 6. **Peer Copy Persistence & Disappearing vs. Local Wipe:**
    - Direct P2P messaging replicates encrypted payloads onto paired peers' local SQLite stores; local Ghost/Stealth wipe only deletes the local device's rows and suppresses local re-sync (`local_suppressions`). It cannot force-wipe an adversary's disk.
+

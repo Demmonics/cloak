@@ -28,3 +28,4 @@ All 16 screenshots below were generated during Playwright E2E execution (`tests/
 1. **Sample PDF right-edge text clipping (`server.rs`):** Initial sample PDF generation placed long strings beyond standard margins; wrapped sample prose at ~72 chars inside `build_valid_sample_pdf_bytes()`.
 2. **PDF reader page-reset on state patch (`PdfReaderShell.tsx`):** `useEffect` previously depended on the `activeDoc` object reference, causing page turns, rotations, and bookmarks to reload the document from page 1. Fixed by keying on `[activeDocId, docs.length, openPdfFromRecord]` with refs.
 3. **Call-concealed PDF capture timing (`13-pdf-call-indicator-concealed.png`):** Updated `stealth-mode.spec.ts` to await `[data-testid="pdf-reader-shell"] main canvas` visibility before taking screenshot 13 so both rendered PDF content and the `Audio Session Active` pill appear together.
+

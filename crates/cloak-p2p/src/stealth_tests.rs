@@ -585,3 +585,88 @@ async fn pdf_validation_blocks_corrupt_files_and_persists_reader_metadata() {
     reopened.shutdown();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn attachment_chunks_are_sealed_at_rest_and_verified_on_read() {
+    let dir = temp_vault_dir("blob-seal");
+    let vault = LocalVault::open(&dir, "BlobSeal").unwrap();
+    let (room, _, _) = vault.create_room(None, "Vault", None, None).unwrap();
+    let secret_payload = b"CONFIDENTIAL_ATTACHMENT_PAYLOAD_SHOULD_NOT_BE_PLAINTEXT_ON_DISK";
+    let meta = vault
+        .store_local_attachment(&room.id, "secret.txt", "text/plain", secret_payload, 4096)
+        .unwrap();
+
+    let chunk_path = dir.join("blobs").join(&meta.id).join("chunk_0.bin");
+    let disk_bytes = std::fs::read(&chunk_path).unwrap();
+    assert!(disk_bytes.starts_with(b"CLKBLOB1"));
+    assert!(
+        !disk_bytes
+            .windows(b"CONFIDENTIAL".len())
+            .any(|w| w == b"CONFIDENTIAL")
+    );
+
+    let restored = vault.read_verified_attachment_bytes(&meta.id).unwrap();
+    assert_eq!(restored, secret_payload);
+    drop(vault);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn pdf_search_ordinary_queries_do_not_lockout_while_burst_throttles() {
+    let dir = temp_vault_dir("pdf-search-sep");
+    let node = P2pNode::start(&dir, "127.0.0.1:0", "SearchUser")
+        .await
+        .expect("start");
+    let mut cfg = node.stealth().get_config().unwrap();
+    cfg.enabled = true;
+    cfg.launch_view = StealthLaunchView::PdfReader;
+    node.stealth().update_config(cfg).unwrap();
+    node.add_stealth_secret_code(
+        "Search Key",
+        "#ember-signal-77",
+        SecretCodeAction::OpenMessenger,
+        None,
+        true,
+        false,
+    )
+    .unwrap();
+    node.stealth()
+        .handle_trigger(PrivacyTriggerKind::ManualLock)
+        .unwrap();
+
+    // 5 ordinary non-matching searches in PDF bar must NOT increment explicit auth failed_attempts
+    for term in ["invoice", "quarterly", "thermal", "budget", "telemetry"] {
+        let res = node
+            .stealth()
+            .verify_and_unlock(UnlockMethod::PdfSearch, term, None)
+            .unwrap();
+        assert!(!res.unlocked);
+    }
+    assert_eq!(node.get_stealth_bootstrap().failed_attempts, 0);
+    assert_eq!(node.get_stealth_bootstrap().lockout_remaining_seconds, 0);
+
+    // 3 more misses (8 total in burst window) silently throttle pdf_search brute force
+    for term in ["probe6", "probe7", "probe8"] {
+        let _ = node
+            .stealth()
+            .verify_and_unlock(UnlockMethod::PdfSearch, term, None)
+            .unwrap();
+    }
+    let burst_blocked = node
+        .stealth()
+        .verify_and_unlock(UnlockMethod::PdfSearch, "#ember-signal-77", None)
+        .unwrap();
+    assert!(!burst_blocked.unlocked);
+    assert_eq!(node.get_stealth_bootstrap().failed_attempts, 0);
+
+    // After 31s burst cooldown elapses, valid code unlocks normally
+    node.stealth().advance_clock_ms(31_000).unwrap();
+    let unlocked = node
+        .stealth()
+        .verify_and_unlock(UnlockMethod::PdfSearch, "#ember-signal-77", None)
+        .unwrap();
+    assert!(unlocked.unlocked);
+
+    node.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
+}

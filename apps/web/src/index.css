@@ -8,7 +8,7 @@ body,
   height: 100%;
   background-color: var(--cloak-bg-void);
   color: var(--cloak-text);
-  font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--cloak-font-sans);
 }
 
 * {
@@ -16,66 +16,80 @@ body,
   scrollbar-color: var(--cloak-scroll-thumb) var(--cloak-scroll-track);
 }
 
-.cloak-prose p {
+.cloak-prose p,
+.cloak-md p {
   margin: 0.25rem 0;
 }
 
-.cloak-prose p:first-child {
+.cloak-prose p:first-child,
+.cloak-md p:first-child {
   margin-top: 0;
 }
 
-.cloak-prose p:last-child {
+.cloak-prose p:last-child,
+.cloak-md p:last-child {
   margin-bottom: 0;
 }
 
-.cloak-prose pre {
+.cloak-prose pre,
+.cloak-md pre {
   margin: 0.45rem 0;
   padding: 0.65rem 0.85rem;
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
   background: var(--cloak-bg-input);
   border: 1px solid var(--cloak-border);
   overflow-x: auto;
   font-size: 0.84rem;
 }
 
-.cloak-prose code {
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, SFMono-Regular, Menlo, monospace;
+.cloak-prose code,
+.cloak-md code {
+  font-family: var(--cloak-font-mono);
   font-size: 0.86em;
   background: var(--cloak-accent-soft);
   color: var(--cloak-accent-text);
-  padding: 0.1rem 0.3rem;
-  border-radius: 0.3rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
 }
 
-.cloak-prose pre code {
+.cloak-prose pre code,
+.cloak-md pre code {
   background: transparent;
   color: inherit;
   padding: 0;
 }
 
-.cloak-prose blockquote {
+.cloak-prose blockquote,
+.cloak-md blockquote {
   margin: 0.35rem 0;
   padding-left: 0.75rem;
-  border-left: 3px solid var(--cloak-accent);
+  border-left: 2px solid var(--cloak-accent);
+  font-family: var(--cloak-font-editorial);
+  font-style: italic;
   color: var(--cloak-text-muted);
 }
 
-.cloak-prose a {
+.cloak-prose a,
+.cloak-md a {
   color: var(--cloak-info-text);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
 }
 
 .cloak-prose ul,
-.cloak-prose ol {
+.cloak-prose ol,
+.cloak-md ul,
+.cloak-md ol {
   margin: 0.3rem 0;
   padding-left: 1.25rem;
 }
 
-.cloak-prose ul {
+.cloak-prose ul,
+.cloak-md ul {
   list-style-type: disc;
 }
 
-.cloak-prose ol {
+.cloak-prose ol,
+.cloak-md ol {
   list-style-type: decimal;
 }

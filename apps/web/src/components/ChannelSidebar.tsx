@@ -164,7 +164,7 @@ export function ChannelSidebar({ roomDetail, onJoinVoiceChannel }: ChannelSideba
                         </span>
                       )}
                       {unread > 0 && (
-                        <span className="min-w-4 h-4 px-1 rounded-full bg-[#dc2626] text-[10px] font-bold text-white flex items-center justify-center">
+                        <span className="min-w-4 h-4 px-1 rounded-full bg-[var(--cloak-danger)] text-[10px] font-bold text-white flex items-center justify-center">
                           {unread}
                         </span>
                       )}

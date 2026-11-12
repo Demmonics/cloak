@@ -84,6 +84,7 @@ test.describe('Cloak Phase 10 Stealth Mode + Offline PDF Decoy + Secret Unlock +
     const spawnA = () =>
       spawn(desktopExe, [
         '--headless',
+        '--enable-test-clock',
         '--data-dir',
         dirA,
         '--p2p-bind',
@@ -99,6 +100,7 @@ test.describe('Cloak Phase 10 Stealth Mode + Offline PDF Decoy + Secret Unlock +
     let procA = spawnA();
     const procB = spawn(desktopExe, [
       '--headless',
+      '--enable-test-clock',
       '--data-dir',
       dirB,
       '--p2p-bind',
@@ -355,6 +357,17 @@ test.describe('Cloak Phase 10 Stealth Mode + Offline PDF Decoy + Secret Unlock +
       await expect(pageA.getByTestId('pdf-reader-shell')).toBeVisible();
 
       const pdfSearch2 = pageA.getByLabel('Search in document');
+      // Ordinary in-PDF text searches MUST never increment failed unlock attempts or trigger rate-limit lockout!
+      for (const ordinaryTerm of ['quarterly', 'Section', 'telemetry', 'hardware']) {
+        await pdfSearch2.fill(ordinaryTerm);
+        await pdfSearch2.press('Enter');
+      }
+      const bootAfterOrdinarySearches = await (
+        await fetch(`${urlA}/p2p/v1/stealth/bootstrap`, { headers: { Authorization: `Bearer ${tokA}` } })
+      ).json();
+      expect(bootAfterOrdinarySearches.failedAttempts).toBe(0);
+      expect(bootAfterOrdinarySearches.lockoutRemainingSeconds).toBe(0);
+
       await pdfSearch2.fill('temp-removable-key');
       await pdfSearch2.press('Enter');
       await expect(pageA.getByTestId('pdf-reader-shell')).toBeVisible(); // stays in PDF mode

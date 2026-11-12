@@ -20,3 +20,4 @@
 - **Sidebar Tabs & Popovers:** `Pages` thumbnail strip, `Outline` document outline tree, `Saved` bookmarks panel, `Library` manager, `Document Properties` popover (title, filename, page count, byte size, SHA-256 prefix), and Light/Dark PDF chrome themes.
 - **In-Document Text Search + Secret Code Routing:** Pressing Enter on the `Search in document` form checks Stealth unlock via `p2pApi.unlockStealth('pdf_search', query)` when `pdf_search` is enabled; if the query does not match a configured secret code, it executes local PDF.js text search across pages without leaking failed-unlock noise into ordinary reading.
 - **No Sensitive Metadata Leaks:** While concealed during a voice call, the status bar renders at most a neutral `Audio Session Active` pill (configurable via `showCallIndicatorInPdf`), with zero Cloak branding or peer/room names.
+

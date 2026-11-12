@@ -8,13 +8,14 @@ const STORAGE_KEY = 'color-scheme';
 function readStoredPreference(): ThemePreference {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === 'light' || raw === 'dark') {
+    if (raw === 'dark' || raw === 'system' || raw === 'light') {
       return raw;
     }
   } catch {
     // Ignore storage access errors in restricted contexts.
   }
-  return 'system';
+  // Muted stone/sage Light mode is Cloak's signature default unless overridden.
+  return 'light';
 }
 
 function applyThemePreference(pref: ThemePreference): void {
@@ -23,8 +24,8 @@ function applyThemePreference(pref: ThemePreference): void {
     meta.content = pref === 'system' ? 'light dark' : pref;
   }
   try {
-    if (pref === 'system') {
-      window.localStorage.removeItem(STORAGE_KEY);
+    if (pref === 'light') {
+      window.localStorage.setItem(STORAGE_KEY, 'light');
     } else {
       window.localStorage.setItem(STORAGE_KEY, pref);
     }
@@ -37,7 +38,7 @@ export function ThemeToggle() {
   const [preference, setPreference] = useState<ThemePreference>(() => readStoredPreference());
   const [systemDark, setSystemDark] = useState<boolean>(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return true;
+      return false;
     }
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
@@ -49,7 +50,6 @@ export function ThemeToggle() {
   useEffect(() => {
     const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
     const onMediaChange = (event: MediaQueryListEvent) => {
-      // Only update the label hint; never mutate or erase the stored preference.
       setSystemDark(event.matches);
     };
     const onStorage = (event: StorageEvent) => {
@@ -78,20 +78,20 @@ export function ThemeToggle() {
   }> = [
     {
       value: 'light',
-      label: 'Light',
-      title: 'Switch to Light theme',
+      label: 'Stone',
+      title: 'Signature Muted Stone & Sage Light theme',
       icon: Sun,
     },
     {
       value: 'system',
       label: 'Auto',
-      title: `Match system theme (currently ${systemDark ? 'Dark' : 'Light'})`,
+      title: `Match system theme (currently ${systemDark ? 'Deep Forest' : 'Stone'})`,
       icon: Monitor,
     },
     {
       value: 'dark',
-      label: 'Dark',
-      title: 'Switch to Dark theme',
+      label: 'Forest',
+      title: 'Deep Forest Dark theme',
       icon: Moon,
     },
   ];
@@ -101,7 +101,7 @@ export function ThemeToggle() {
       role="group"
       aria-label="Color theme"
       data-testid="theme-toggle"
-      className="inline-flex items-center rounded-[7px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-0.5"
+      className="inline-flex items-center rounded-full border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-0.5 shadow-2xs"
     >
       {options.map((opt) => {
         const Icon = opt.icon;
@@ -114,18 +114,17 @@ export function ThemeToggle() {
             aria-pressed={active}
             title={opt.title}
             data-testid={`theme-${opt.value}-btn`}
-            className={`inline-flex items-center gap-1 rounded-[5px] px-2 py-1 text-[11px] font-medium cursor-pointer transition-colors ${
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium cursor-pointer transition-colors ${
               active
-                ? 'bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)]'
+                ? 'bg-[var(--cloak-accent)] text-[var(--cloak-accent-ink)] shadow-2xs'
                 : 'text-[var(--cloak-text-muted)] hover:text-[var(--cloak-text)] hover:bg-[var(--cloak-bg-hover)]'
             }`}
           >
             <Icon className="w-3 h-3 shrink-0" />
-            <span className="hidden sm:inline">{opt.label}</span>
+            <span className="hidden md:inline">{opt.label}</span>
           </button>
         );
       })}
     </div>
   );
 }
-

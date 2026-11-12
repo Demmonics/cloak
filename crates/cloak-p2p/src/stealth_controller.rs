@@ -42,6 +42,8 @@ pub struct StealthRuntime {
     pub windows_hello_available: bool,
     pub windows_hello_status: String,
     pub last_transition_at_ms: i64,
+    pub pdf_search_misses_ms: Vec<i64>,
+    pub pdf_search_cooldown_until_ms: Option<i64>,
 }
 
 impl Default for StealthRuntime {
@@ -73,6 +75,8 @@ impl Default for StealthRuntime {
             windows_hello_available: false,
             windows_hello_status: "Not checked".into(),
             last_transition_at_ms: now_ms,
+            pdf_search_misses_ms: Vec::new(),
+            pdf_search_cooldown_until_ms: None,
         }
     }
 }
@@ -584,6 +588,35 @@ impl StealthController {
             });
         }
 
+        if method == UnlockMethod::PdfSearch {
+            let throttled = {
+                let mut rt = self.runtime.lock().unwrap();
+                if let Some(until) = rt.pdf_search_cooldown_until_ms {
+                    if until > now_ms {
+                        true
+                    } else {
+                        rt.pdf_search_cooldown_until_ms = None;
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+            if throttled {
+                return Ok(UnlockOutcome {
+                    matched: false,
+                    unlocked: false,
+                    action: None,
+                    target_room_id: None,
+                    open_privacy_settings: false,
+                    needs_additional_factor: false,
+                    lockout_remaining_seconds: 0,
+                    message: "No document matches found.".into(),
+                    bootstrap: self.bootstrap_state(),
+                });
+            }
+        }
+
         let mut matched_action: Option<SecretCodeAction> = None;
         let mut target_room: Option<String> = None;
         let mut needs_add_auth = config.unlock.require_additional_auth;
@@ -636,6 +669,30 @@ impl StealthController {
         };
 
         if !verified {
+            // Separate passive PDF search misses from explicit auth lockouts so normal PDF reading
+            // never locks out the user, while still throttling rapid PDF-search brute-force bursts (>= 8/2m).
+            if method == UnlockMethod::PdfSearch {
+                {
+                    let mut rt = self.runtime.lock().unwrap();
+                    rt.pdf_search_misses_ms.retain(|t| *t >= now_ms - 120_000);
+                    rt.pdf_search_misses_ms.push(now_ms);
+                    if rt.pdf_search_misses_ms.len() >= 8 {
+                        rt.pdf_search_cooldown_until_ms = Some(now_ms + 30_000);
+                        rt.pdf_search_misses_ms.clear();
+                    }
+                }
+                return Ok(UnlockOutcome {
+                    matched: false,
+                    unlocked: false,
+                    action: None,
+                    target_room_id: None,
+                    open_privacy_settings: false,
+                    needs_additional_factor: false,
+                    lockout_remaining_seconds: 0,
+                    message: "No document matches found.".into(),
+                    bootstrap: self.bootstrap_state(),
+                });
+            }
             let next_rl = self
                 .vault
                 .lock()
@@ -752,6 +809,8 @@ impl StealthController {
             rt.pending_target_room_id = target_room.clone();
             rt.pending_open_privacy_settings = open_privacy;
             rt.last_transition_at_ms = now_ms;
+            rt.pdf_search_misses_ms.clear();
+            rt.pdf_search_cooldown_until_ms = None;
         }
         self.persist_checkpoint_and_broadcast(None);
         let snap = self.bootstrap_state();

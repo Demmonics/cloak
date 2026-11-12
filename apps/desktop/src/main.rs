@@ -33,6 +33,7 @@ struct CliOptions {
     autoclose_ms: Option<u64>,
     headless: bool,
     edge_app: bool,
+    enable_test_clock: bool,
 }
 
 fn default_data_dir() -> PathBuf {
@@ -62,6 +63,9 @@ fn parse_args() -> CliOptions {
         autoclose_ms: None,
         headless: false,
         edge_app: false,
+        enable_test_clock: std::env::var("CLOAK_ENABLE_TEST_CLOCK")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false),
     };
 
     let mut args = std::env::args().skip(1);
@@ -108,6 +112,7 @@ fn parse_args() -> CliOptions {
             }
             "--headless" => opts.headless = true,
             "--edge-app" => opts.edge_app = true,
+            "--enable-test-clock" => opts.enable_test_clock = true,
             _ => {}
         }
     }
@@ -185,6 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             data_dir: opts.data_dir.clone(),
             session_token: session_token.clone(),
             expected_http_port: Arc::new(AtomicU16::new(http_addr.port())),
+            enable_test_clock: opts.enable_test_clock,
         });
 
         let server_handle = tokio::spawn(async move {

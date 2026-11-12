@@ -1461,28 +1461,34 @@ impl P2pNode {
             }
             WireFrame::Pong { .. } | WireFrame::Rekey { .. } => {}
             WireFrame::SyncRequest { room_id, after_seq } => {
-                let batch = {
+                let batch_opt = {
                     let vault = self.vault.lock().unwrap();
-                    let msgs = vault
-                        .list_stored_messages_since(&room_id, after_seq)
-                        .unwrap_or_default();
-                    let tombs = vault.list_tombstones_for_room(&room_id).unwrap_or_default();
-                    let mut attachments = Vec::new();
-                    for m in &msgs {
-                        for aid in &m.attachment_ids {
-                            if let Ok(Some(meta)) = vault.get_attachment_meta(aid) {
-                                attachments.push(meta);
+                    if vault.get_room(&room_id).ok().flatten().is_none() {
+                        None
+                    } else {
+                        let msgs = vault
+                            .list_stored_messages_since(&room_id, after_seq)
+                            .unwrap_or_default();
+                        let tombs = vault.list_tombstones_for_room(&room_id).unwrap_or_default();
+                        let mut attachments = Vec::new();
+                        for m in &msgs {
+                            for aid in &m.attachment_ids {
+                                if let Ok(Some(meta)) = vault.get_attachment_meta(aid) {
+                                    attachments.push(meta);
+                                }
                             }
                         }
-                    }
-                    WireFrame::SyncBatch {
-                        room_id,
-                        messages: msgs,
-                        tombstones: tombs,
-                        attachments,
+                        Some(WireFrame::SyncBatch {
+                            room_id,
+                            messages: msgs,
+                            tombstones: tombs,
+                            attachments,
+                        })
                     }
                 };
-                let _ = tx.send(batch).await;
+                if let Some(batch) = batch_opt {
+                    let _ = tx.send(batch).await;
+                }
             }
             WireFrame::SyncBatch {
                 room_id,

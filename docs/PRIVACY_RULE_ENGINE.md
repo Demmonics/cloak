@@ -23,3 +23,4 @@ Each rule expresses a deterministic declarative automation tuple:
 - Accessible in tab 6 (`Rules & Test Mode`) of `P2pStealthSettingsModal`.
 - Accepts a simulated trigger, mock viewed message count, mock unread message count, and fallback deletion policy (`TestModePreviewRequest`).
 - Evaluates the exact same rule engine (`evaluate_privacy_rules`) against in-memory mock counts to report resulting surface, lock state, mock cleared/remaining counts, and call/notification outcomes without mutating real SQLite rooms, messages, or runtime state.
+

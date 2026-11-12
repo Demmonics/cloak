@@ -31,3 +31,4 @@
   - Attempt 5: `60s`
   - Attempts 6+: `300s`
 - Any valid unlock or recovery resets `failed_attempts = 0`, `cooldown_until_ms = NULL`, and `lockout_tier = 0`.
+

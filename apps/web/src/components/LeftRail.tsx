@@ -53,7 +53,7 @@ export function LeftRail({ rooms, onSelectRoom }: LeftRailProps) {
           >
             <MessageSquareLock className="w-4 h-4" />
             {unread > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#dc2626] text-[10px] font-bold text-white flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[var(--cloak-danger)] text-[10px] font-bold text-white flex items-center justify-center">
                 {unread > 99 ? '99+' : unread}
               </span>
             )}
@@ -88,7 +88,7 @@ export function LeftRail({ rooms, onSelectRoom }: LeftRailProps) {
           >
             {initials || 'RM'}
             {unread > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#dc2626] text-[10px] font-bold text-white flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[var(--cloak-danger)] text-[10px] font-bold text-white flex items-center justify-center">
                 {unread > 99 ? '99+' : unread}
               </span>
             )}

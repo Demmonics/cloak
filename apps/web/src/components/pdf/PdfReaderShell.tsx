@@ -174,6 +174,8 @@ export function PdfReaderShell({
   const docsRef = useRef(docs);
   docsRef.current = docs;
   const loadedDocIdRef = useRef<string | null>(null);
+  const lastSearchQueryRef = useRef<string>('');
+  const triedNonDocUnlockProbesRef = useRef<Set<string>>(new Set());
 
   // Open document into pdf.js with network fetching & JS eval disabled
   const openPdfFromRecord = useCallback(async (doc: P2pPdfDocument, password?: string) => {
@@ -473,14 +475,15 @@ export function PdfReaderShell({
     }
   }, []);
 
-  // Real PDF text search across loaded document (never executes if submitted code unlocked!)
+  // Real PDF text search across loaded document (returns hits so normal in-PDF searches never trigger unlock failed attempts)
   const runDocumentSearch = useCallback(
-    async (query: string) => {
+    async (query: string): Promise<SearchHit[]> => {
       const q = query.trim().toLowerCase();
       if (!q || !pdfProxy) {
         setSearchHits([]);
         setActiveHitIdx(0);
-        return;
+        lastSearchQueryRef.current = '';
+        return [];
       }
       const hits: SearchHit[] = [];
       for (let p = 1; p <= pdfProxy.numPages; p += 1) {
@@ -501,31 +504,56 @@ export function PdfReaderShell({
           // Ignore page text error
         }
       }
+      lastSearchQueryRef.current = query.trim();
       setSearchHits(hits);
       setActiveHitIdx(0);
       const firstHit = hits[0];
       if (firstHit) {
         goToPage(firstHit.page);
       }
+      return hits;
     },
     [pdfProxy, goToPage],
   );
 
-  // PDF search Enter handler: checks secret unlock discreetly when enabled without storing secret query!
+  // PDF search Enter handler: prioritize genuine document matches so ordinary PDF reading never increments failed unlock attempts.
   const handleSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const raw = searchText;
-    if (!raw.trim()) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
       setSearchHits([]);
+      lastSearchQueryRef.current = '';
       return;
     }
-    if (bootstrap.enabledUnlockMethods.includes('pdf_search')) {
+
+    if (pdfProxy) {
+      if (lastSearchQueryRef.current === trimmed && searchHits.length > 0) {
+        const nextIdx = (activeHitIdx + 1) % searchHits.length;
+        setActiveHitIdx(nextIdx);
+        const targetHit = searchHits[nextIdx];
+        if (targetHit) goToPage(targetHit.page);
+        return;
+      }
+      const hits = await runDocumentSearch(raw);
+      if (hits.length > 0) {
+        // Real match in the PDF document -> strictly normal reader search, zero unlock probes!
+        return;
+      }
+    }
+
+    if (
+      bootstrap.enabledUnlockMethods.includes('pdf_search') &&
+      !triedNonDocUnlockProbesRef.current.has(raw)
+    ) {
       try {
         const outcome = await p2pApi.unlockStealth('pdf_search', raw);
         if (outcome.matched) {
+          triedNonDocUnlockProbesRef.current.clear();
           // Immediately clear input so secret code never lingers in DOM or search state!
           setSearchText('');
           setSearchHits([]);
+          lastSearchQueryRef.current = '';
           if (outcome.needsAdditionalFactor) {
             setNeedsAdditionalFactor(true);
             setUnlockMethodChoice('passphrase');
@@ -536,18 +564,10 @@ export function PdfReaderShell({
           onUnlockOutcome(outcome);
           return;
         }
-        // If rate-limited without revealing secret state unnecessarily, fall through gracefully to normal search
+        triedNonDocUnlockProbesRef.current.add(raw);
       } catch {
-        // Fall through silently to standard PDF search
+        // Fall through silently to standard PDF search state
       }
-    }
-    if (searchHits.length > 0 && pdfProxy) {
-      const nextIdx = (activeHitIdx + 1) % searchHits.length;
-      setActiveHitIdx(nextIdx);
-      const targetHit = searchHits[nextIdx];
-      if (targetHit) goToPage(targetHit.page);
-    } else {
-      await runDocumentSearch(raw);
     }
   };
 

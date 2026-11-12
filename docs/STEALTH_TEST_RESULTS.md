@@ -33,3 +33,4 @@ Executed against non-headless `target\release\cloak-desktop.exe` using Win32 `En
 | Headless cold startup | **1050.5 ms** (`HeadlessIdleRamMiB: 14.77 MiB`) |
 | 50 sequential encrypted SQLite + P2P messages | **198.5 ms** (`SyncedMessagesOnPeer: 50`) |
 | 2 MiB localhost file transfer | **914.5 ms** (`VerifiedBytesOnPeer: 2097152` bytes) |
+

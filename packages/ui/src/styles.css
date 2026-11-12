@@ -1,64 +1,72 @@
 :root {
   color-scheme: light dark;
 
-  /* Light Mode Defaults (Architectural Alabaster & Cool Slate — Zero Purple/Slop) */
-  --cloak-bg-void: #f6f7f9;
-  --cloak-bg-rail: #eceff4;
-  --cloak-bg-sidebar: #f1f4f8;
-  --cloak-bg-surface: #ffffff;
-  --cloak-bg-elevated: #e8edf3;
-  --cloak-bg-input: #ffffff;
-  --cloak-bg-hover: rgba(15, 118, 110, 0.08);
-  --cloak-bg-active: #e6f4f1;
+  --cloak-font-editorial: 'Georgia', 'Sitka Display', 'Palatino Linotype', 'Times New Roman', serif;
+  --cloak-font-sans: 'Segoe UI Variable Text', 'Segoe UI', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --cloak-font-mono: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
 
-  --cloak-border: #d8dfe8;
-  --cloak-border-strong: #bcc7d6;
+  /* Signature Default: Muted Stone (#D8DAD8), Sage & Deep Forest Ink (#0E1A18) */
+  --cloak-bg-void: #d8dad8;
+  --cloak-bg-rail: #c5c9c5;
+  --cloak-bg-sidebar: #cfd3cf;
+  --cloak-bg-surface: #e3e5e2;
+  --cloak-bg-card: #eeede9;
+  --cloak-bg-elevated: #d5d9d4;
+  --cloak-bg-sage: #5f6f63;
+  --cloak-bg-sage-soft: #cad4ca;
+  --cloak-bg-input: #f2f1ed;
+  --cloak-bg-hover: rgba(14, 26, 24, 0.06);
+  --cloak-bg-active: #c4cec4;
 
-  --cloak-text: #111827;
-  --cloak-text-body: #1f2937;
-  --cloak-text-muted: #4b5563;
-  --cloak-text-dim: #6b7280;
+  --cloak-border: rgba(14, 26, 24, 0.13);
+  --cloak-border-strong: rgba(14, 26, 24, 0.24);
 
-  --cloak-accent: #0f766e;
-  --cloak-accent-hover: #115e59;
-  --cloak-accent-ink: #ffffff;
-  --cloak-accent-text: #0f766e;
-  --cloak-accent-soft: rgba(15, 118, 110, 0.1);
-  --cloak-accent-border: rgba(15, 118, 110, 0.35);
-  --cloak-accent-focus: #0f766e;
-  --cloak-accent-blue: #0369a1;
+  --cloak-text: #0e1a18;
+  --cloak-text-body: #182724;
+  --cloak-text-muted: #3f4e49;
+  --cloak-text-dim: #5d6b66;
 
-  --cloak-info-text: #0369a1;
-  --cloak-info-soft: rgba(3, 105, 161, 0.1);
-  --cloak-info-border: rgba(3, 105, 161, 0.3);
+  --cloak-accent: #182c27;
+  --cloak-accent-hover: #0e1a18;
+  --cloak-accent-ink: #f2f1ed;
+  --cloak-accent-text: #22443a;
+  --cloak-accent-soft: rgba(65, 86, 71, 0.14);
+  --cloak-accent-border: rgba(14, 26, 24, 0.24);
+  --cloak-accent-focus: #182c27;
+  --cloak-accent-blue: #3c5e5c;
 
-  --cloak-success: #15803d;
-  --cloak-success-text: #166534;
-  --cloak-success-soft: rgba(21, 128, 61, 0.1);
-  --cloak-success-border: rgba(21, 128, 61, 0.32);
+  --cloak-info-text: #2e4f4c;
+  --cloak-info-soft: rgba(46, 79, 76, 0.10);
+  --cloak-info-border: rgba(46, 79, 76, 0.26);
 
-  --cloak-warn: #d97706;
-  --cloak-warn-text: #b45309;
-  --cloak-warn-soft: rgba(217, 119, 6, 0.1);
-  --cloak-warn-border: rgba(217, 119, 6, 0.35);
+  --cloak-success: #2f6046;
+  --cloak-success-text: #244f38;
+  --cloak-success-soft: rgba(47, 96, 70, 0.11);
+  --cloak-success-border: rgba(47, 96, 70, 0.28);
 
-  --cloak-danger: #dc2626;
-  --cloak-danger-hover: #b91c1c;
-  --cloak-danger-text: #b91c1c;
-  --cloak-danger-soft: rgba(220, 38, 38, 0.08);
-  --cloak-danger-border: rgba(220, 38, 38, 0.32);
+  --cloak-warn: #8b5d22;
+  --cloak-warn-text: #744b16;
+  --cloak-warn-soft: rgba(139, 93, 34, 0.11);
+  --cloak-warn-border: rgba(139, 93, 34, 0.28);
 
-  --cloak-toast-info-bg: #ffffff;
-  --cloak-toast-error-bg: #fef2f2;
-  --cloak-backdrop: rgba(15, 23, 42, 0.42);
-  --cloak-dialog-shadow: 0 18px 44px rgba(17, 24, 39, 0.14), 0 1px 3px rgba(17, 24, 39, 0.06);
-  --cloak-skeleton-mid: #dde3ec;
-  --cloak-scroll-thumb: #c4cdd8;
+  --cloak-danger: #8d322c;
+  --cloak-danger-hover: #732520;
+  --cloak-danger-text: #7f2620;
+  --cloak-danger-soft: rgba(141, 50, 44, 0.10);
+  --cloak-danger-border: rgba(141, 50, 44, 0.30);
+
+  --cloak-toast-info-bg: #eeede9;
+  --cloak-toast-error-bg: #f4e6e4;
+  --cloak-backdrop: rgba(14, 26, 24, 0.38);
+  --cloak-dialog-shadow: 0 22px 54px rgba(14, 26, 24, 0.16), 0 2px 6px rgba(14, 26, 24, 0.06);
+  --cloak-card-shadow: 0 2px 10px rgba(14, 26, 24, 0.05), 0 1px 2px rgba(14, 26, 24, 0.04);
+  --cloak-skeleton-mid: #c8cdc8;
+  --cloak-scroll-thumb: rgba(14, 26, 24, 0.22);
   --cloak-scroll-track: transparent;
 
-  --cloak-radius-sm: 4px;
-  --cloak-radius-md: 8px;
-  --cloak-radius-lg: 12px;
+  --cloak-radius-sm: 6px;
+  --cloak-radius-md: 12px;
+  --cloak-radius-lg: 18px;
 }
 
 :root:has(> head > meta[name="color-scheme"][content="dark"]) {
@@ -69,120 +77,70 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --cloak-bg-void: #0b0d10;
-    --cloak-bg-rail: #0e1116;
-    --cloak-bg-sidebar: #111419;
-    --cloak-bg-surface: #171b22;
-    --cloak-bg-elevated: #1e242d;
-    --cloak-bg-input: #0b0d10;
-    --cloak-bg-hover: rgba(20, 184, 166, 0.11);
-    --cloak-bg-active: rgba(20, 184, 166, 0.15);
-
-    --cloak-border: #232934;
-    --cloak-border-strong: #323b4b;
-
-    --cloak-text: #eef1f4;
-    --cloak-text-body: #dce2ea;
-    --cloak-text-muted: #94a0b0;
-    --cloak-text-dim: #6b788e;
-
-    --cloak-accent: #14b8a6;
-    --cloak-accent-hover: #0d9488;
-    --cloak-accent-ink: #041e1c;
-    --cloak-accent-text: #2dd4bf;
-    --cloak-accent-soft: rgba(20, 184, 166, 0.12);
-    --cloak-accent-border: rgba(20, 184, 166, 0.38);
-    --cloak-accent-focus: #2dd4bf;
-    --cloak-accent-blue: #38bdf8;
-
-    --cloak-info-text: #38bdf8;
-    --cloak-info-soft: rgba(56, 189, 248, 0.12);
-    --cloak-info-border: rgba(56, 189, 248, 0.34);
-
-    --cloak-success: #10b981;
-    --cloak-success-text: #34d399;
-    --cloak-success-soft: rgba(16, 185, 129, 0.12);
-    --cloak-success-border: rgba(16, 185, 129, 0.34);
-
-    --cloak-warn: #f59e0b;
-    --cloak-warn-text: #fbbf24;
-    --cloak-warn-soft: rgba(245, 158, 11, 0.12);
-    --cloak-warn-border: rgba(245, 158, 11, 0.36);
-
-    --cloak-danger: #dc2626;
-    --cloak-danger-hover: #ef4444;
-    --cloak-danger-text: #fca5a5;
-    --cloak-danger-soft: rgba(239, 68, 68, 0.12);
-    --cloak-danger-border: rgba(239, 68, 68, 0.38);
-
-    --cloak-toast-info-bg: #171b22;
-    --cloak-toast-error-bg: #1f1417;
-    --cloak-backdrop: rgba(5, 7, 10, 0.72);
-    --cloak-dialog-shadow: 0 24px 64px rgba(0, 0, 0, 0.65);
-    --cloak-skeleton-mid: #28303d;
-    --cloak-scroll-thumb: #2b3341;
-  }
-}
-
 @supports (color: light-dark(white, black)) {
   :root {
-    --cloak-bg-void: light-dark(#f6f7f9, #0b0d10);
-    --cloak-bg-rail: light-dark(#eceff4, #0e1116);
-    --cloak-bg-sidebar: light-dark(#f1f4f8, #111419);
-    --cloak-bg-surface: light-dark(#ffffff, #171b22);
-    --cloak-bg-elevated: light-dark(#e8edf3, #1e242d);
-    --cloak-bg-input: light-dark(#ffffff, #0b0d10);
-    --cloak-bg-hover: light-dark(rgba(15, 118, 110, 0.08), rgba(20, 184, 166, 0.11));
-    --cloak-bg-active: light-dark(#e6f4f1, rgba(20, 184, 166, 0.15));
+    --cloak-bg-void: light-dark(#d8dad8, #0e1a18);
+    --cloak-bg-rail: light-dark(#c5c9c5, #0a1412);
+    --cloak-bg-sidebar: light-dark(#cfd3cf, #12201d);
+    --cloak-bg-surface: light-dark(#e3e5e2, #162623);
+    --cloak-bg-card: light-dark(#eeede9, #1b2d29);
+    --cloak-bg-elevated: light-dark(#d5d9d4, #213631);
+    --cloak-bg-sage: light-dark(#5f6f63, #2c4037);
+    --cloak-bg-sage-soft: light-dark(#cad4ca, #1f342d);
+    --cloak-bg-input: light-dark(#f2f1ed, #0b1614);
+    --cloak-bg-hover: light-dark(rgba(14, 26, 24, 0.06), rgba(216, 218, 216, 0.06));
+    --cloak-bg-active: light-dark(#c4cec4, #233831);
 
-    --cloak-border: light-dark(#d8dfe8, #232934);
-    --cloak-border-strong: light-dark(#bcc7d6, #323b4b);
+    --cloak-border: light-dark(rgba(14, 26, 24, 0.13), rgba(216, 218, 216, 0.12));
+    --cloak-border-strong: light-dark(rgba(14, 26, 24, 0.24), rgba(216, 218, 216, 0.22));
 
-    --cloak-text: light-dark(#111827, #eef1f4);
-    --cloak-text-body: light-dark(#1f2937, #dce2ea);
-    --cloak-text-muted: light-dark(#4b5563, #94a0b0);
-    --cloak-text-dim: light-dark(#6b7280, #6b788e);
+    --cloak-text: light-dark(#0e1a18, #ecebe5);
+    --cloak-text-body: light-dark(#182724, #d6d8d3);
+    --cloak-text-muted: light-dark(#3f4e49, #9ba7a0);
+    --cloak-text-dim: light-dark(#5d6b66, #76847d);
 
-    --cloak-accent: light-dark(#0f766e, #14b8a6);
-    --cloak-accent-hover: light-dark(#115e59, #0d9488);
-    --cloak-accent-ink: light-dark(#ffffff, #041e1c);
-    --cloak-accent-text: light-dark(#0f766e, #2dd4bf);
-    --cloak-accent-soft: light-dark(rgba(15, 118, 110, 0.1), rgba(20, 184, 166, 0.12));
-    --cloak-accent-border: light-dark(rgba(15, 118, 110, 0.35), rgba(20, 184, 166, 0.38));
-    --cloak-accent-focus: light-dark(#0f766e, #2dd4bf);
-    --cloak-accent-blue: light-dark(#0369a1, #38bdf8);
+    --cloak-accent: light-dark(#182c27, #8fa392);
+    --cloak-accent-hover: light-dark(#0e1a18, #a4b8a7);
+    --cloak-accent-ink: light-dark(#f2f1ed, #0e1a18);
+    --cloak-accent-text: light-dark(#22443a, #b9cab9);
+    --cloak-accent-soft: light-dark(rgba(65, 86, 71, 0.14), rgba(143, 163, 146, 0.14));
+    --cloak-accent-border: light-dark(rgba(14, 26, 24, 0.24), rgba(143, 163, 146, 0.34));
+    --cloak-accent-focus: light-dark(#182c27, #b9cab9);
+    --cloak-accent-blue: light-dark(#3c5e5c, #90b0ac);
 
-    --cloak-info-text: light-dark(#0369a1, #38bdf8);
-    --cloak-info-soft: light-dark(rgba(3, 105, 161, 0.1), rgba(56, 189, 248, 0.12));
-    --cloak-info-border: light-dark(rgba(3, 105, 161, 0.3), rgba(56, 189, 248, 0.34));
+    --cloak-info-text: light-dark(#2e4f4c, #9fc0bb);
+    --cloak-info-soft: light-dark(rgba(46, 79, 76, 0.10), rgba(144, 176, 172, 0.13));
+    --cloak-info-border: light-dark(rgba(46, 79, 76, 0.26), rgba(144, 176, 172, 0.32));
 
-    --cloak-success: light-dark(#15803d, #10b981);
-    --cloak-success-text: light-dark(#166534, #34d399);
-    --cloak-success-soft: light-dark(rgba(21, 128, 61, 0.1), rgba(16, 185, 129, 0.12));
-    --cloak-success-border: light-dark(rgba(21, 128, 61, 0.32), rgba(16, 185, 129, 0.34));
+    --cloak-success: light-dark(#2f6046, #538e6e);
+    --cloak-success-text: light-dark(#244f38, #91c6a8);
+    --cloak-success-soft: light-dark(rgba(47, 96, 70, 0.11), rgba(83, 142, 110, 0.15));
+    --cloak-success-border: light-dark(rgba(47, 96, 70, 0.28), rgba(83, 142, 110, 0.35));
 
-    --cloak-warn: light-dark(#d97706, #f59e0b);
-    --cloak-warn-text: light-dark(#b45309, #fbbf24);
-    --cloak-warn-soft: light-dark(rgba(217, 119, 6, 0.1), rgba(245, 158, 11, 0.12));
-    --cloak-warn-border: light-dark(rgba(217, 119, 6, 0.35), rgba(245, 158, 11, 0.36));
+    --cloak-warn: light-dark(#8b5d22, #c5934e);
+    --cloak-warn-text: light-dark(#744b16, #dfb578);
+    --cloak-warn-soft: light-dark(rgba(139, 93, 34, 0.11), rgba(197, 147, 78, 0.14));
+    --cloak-warn-border: light-dark(rgba(139, 93, 34, 0.28), rgba(197, 147, 78, 0.34));
 
-    --cloak-danger: light-dark(#dc2626, #dc2626);
-    --cloak-danger-hover: light-dark(#b91c1c, #ef4444);
-    --cloak-danger-text: light-dark(#b91c1c, #fca5a5);
-    --cloak-danger-soft: light-dark(rgba(220, 38, 38, 0.08), rgba(239, 68, 68, 0.12));
-    --cloak-danger-border: light-dark(rgba(220, 38, 38, 0.32), rgba(239, 68, 68, 0.38));
+    --cloak-danger: light-dark(#8d322c, #b34941);
+    --cloak-danger-hover: light-dark(#732520, #c85850);
+    --cloak-danger-text: light-dark(#7f2620, #e9a6a0);
+    --cloak-danger-soft: light-dark(rgba(141, 50, 44, 0.10), rgba(179, 73, 65, 0.15));
+    --cloak-danger-border: light-dark(rgba(141, 50, 44, 0.30), rgba(179, 73, 65, 0.36));
 
-    --cloak-toast-info-bg: light-dark(#ffffff, #171b22);
-    --cloak-toast-error-bg: light-dark(#fef2f2, #1f1417);
-    --cloak-backdrop: light-dark(rgba(15, 23, 42, 0.42), rgba(5, 7, 10, 0.72));
+    --cloak-toast-info-bg: light-dark(#eeede9, #1b2d29);
+    --cloak-toast-error-bg: light-dark(#f4e6e4, #2a1918);
+    --cloak-backdrop: light-dark(rgba(14, 26, 24, 0.38), rgba(6, 12, 11, 0.72));
     --cloak-dialog-shadow: light-dark(
-      0 18px 44px rgba(17, 24, 39, 0.14), 0 1px 3px rgba(17, 24, 39, 0.06),
-      0 24px 64px rgba(0, 0, 0, 0.65)
+      0 22px 54px rgba(14, 26, 24, 0.16), 0 2px 6px rgba(14, 26, 24, 0.06),
+      0 24px 64px rgba(0, 0, 0, 0.6)
     );
-    --cloak-skeleton-mid: light-dark(#dde3ec, #28303d);
-    --cloak-scroll-thumb: light-dark(#c4cdd8, #2b3341);
+    --cloak-card-shadow: light-dark(
+      0 2px 10px rgba(14, 26, 24, 0.05), 0 1px 2px rgba(14, 26, 24, 0.04),
+      0 4px 16px rgba(0, 0, 0, 0.25)
+    );
+    --cloak-skeleton-mid: light-dark(#c8cdc8, #283d37);
+    --cloak-scroll-thumb: light-dark(rgba(14, 26, 24, 0.22), rgba(216, 218, 216, 0.22));
   }
 }
 
@@ -191,13 +149,23 @@ html {
   scrollbar-color: var(--cloak-scroll-thumb) var(--cloak-scroll-track);
 }
 
+.font-editorial {
+  font-family: var(--cloak-font-editorial);
+}
+
+.font-mono-tabular {
+  font-family: var(--cloak-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 @supports not (scrollbar-color: auto) {
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 9px;
+    height: 9px;
   }
   ::-webkit-scrollbar-thumb {
     background: var(--cloak-scroll-thumb);
+    border-radius: 999px;
   }
   ::-webkit-scrollbar-track {
     background: var(--cloak-scroll-track);
@@ -214,15 +182,32 @@ dialog.cloak-dialog {
   padding: 0;
   border: 1px solid var(--cloak-border-strong);
   border-radius: var(--cloak-radius-lg);
-  background: var(--cloak-bg-surface);
+  background: var(--cloak-bg-card);
   color: var(--cloak-text);
   max-width: min(92vw, 620px);
   width: 100%;
   box-shadow: var(--cloak-dialog-shadow);
+  opacity: 0;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-behavior: allow-discrete;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.cloak-dialog {
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.cloak-dialog {
+    transition-duration: 0.1s;
+  }
 }
 
 dialog.cloak-dialog.cloak-dialog-wide {
-  max-width: min(94vw, 820px);
+  max-width: min(94vw, 860px);
 }
 
 dialog.cloak-dialog:modal {
@@ -232,32 +217,60 @@ dialog.cloak-dialog:modal {
   flex-direction: column;
 }
 
-dialog.cloak-dialog:not([open]) {
-  display: none;
+dialog.cloak-dialog[open] {
+  opacity: 1;
+  @starting-style {
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    transform: translateY(0) scale(1);
+    @starting-style {
+      transform: translateY(8px) scale(0.98);
+    }
+  }
 }
 
 dialog.cloak-dialog::backdrop {
-  background: var(--cloak-backdrop);
-  backdrop-filter: blur(2px);
+  background-color: transparent;
   overflow: hidden;
   overscroll-behavior: contain;
+  transition-property: background-color, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+dialog.cloak-dialog[open]::backdrop {
+  background-color: var(--cloak-backdrop);
+  @starting-style {
+    background-color: transparent;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  dialog.cloak-dialog[open] {
-    animation: cloak-dialog-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
   .cloak-transition {
-    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 160ms ease;
+  }
+  .cloak-msg-enter {
+    animation: cloak-msg-rise 190ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cloak-panel-enter {
+    animation: cloak-panel-fade 210ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cloak-menu-enter {
+    animation: cloak-menu-pop 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .cloak-skeleton {
     background: linear-gradient(90deg, var(--cloak-bg-elevated) 25%, var(--cloak-skeleton-mid) 50%, var(--cloak-bg-elevated) 75%);
     background-size: 200% 100%;
-    animation: cloak-shimmer 1.5s infinite linear;
+    animation: cloak-shimmer 1.6s infinite linear;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .cloak-transition {
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
   .cloak-skeleton {
     background: var(--cloak-bg-elevated);
   }
@@ -272,14 +285,36 @@ dialog.cloak-dialog::backdrop {
   }
 }
 
-@keyframes cloak-dialog-in {
+@keyframes cloak-msg-rise {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.985);
+    transform: translateY(5px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
+  }
+}
+
+@keyframes cloak-panel-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cloak-menu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -305,8 +340,14 @@ dialog.cloak-dialog::backdrop {
 }
 
 .cloak-btn {
-  min-block-size: 36px;
-  min-inline-size: 36px;
+  min-block-size: 34px;
+  min-inline-size: 34px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cloak-btn:hover:not(:disabled) {
+    transform: translateY(-0.5px);
+  }
 }
 
 .cloak-btn:active:not(:disabled) {

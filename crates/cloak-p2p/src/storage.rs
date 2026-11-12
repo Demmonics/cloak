@@ -733,7 +733,9 @@ impl LocalVault {
              ON CONFLICT(id) DO UPDATE SET
                 ciphertext_b64 = excluded.ciphertext_b64,
                 signature_b64 = excluded.signature_b64,
-                edited_at = excluded.edited_at",
+                edited_at = excluded.edited_at
+             WHERE messages.sender_device_id = excluded.sender_device_id
+               AND messages.room_id = excluded.room_id",
             params![
                 msg.id,
                 msg.room_id,
@@ -1613,11 +1615,15 @@ impl LocalVault {
 
         let mut total_chunks: u32 = 0;
         if bytes.is_empty() {
-            std::fs::write(dir.join("chunk_0.bin"), [])?;
+            let sealed = self.vault_box.seal_bytes(&format!("blob:{id}:0"), &[])?;
+            std::fs::write(dir.join("chunk_0.bin"), sealed)?;
             total_chunks = 1;
         } else {
             for (idx, chunk) in bytes.chunks(chunk_size).enumerate() {
-                std::fs::write(dir.join(format!("chunk_{idx}.bin")), chunk)?;
+                let sealed = self
+                    .vault_box
+                    .seal_bytes(&format!("blob:{id}:{idx}"), chunk)?;
+                std::fs::write(dir.join(format!("chunk_{idx}.bin")), sealed)?;
                 total_chunks += 1;
             }
         }
@@ -1671,15 +1677,23 @@ impl LocalVault {
         data_b64: &str,
     ) -> P2pResult<()> {
         validate_uuid_component(attachment_id, "attachment_id")?;
+        if self.get_attachment_meta(attachment_id)?.is_none() {
+            return Err(P2pError::PeerRejected(format!(
+                "Refusing chunk for unregistered attachment {attachment_id}"
+            )));
+        }
         let bytes = STANDARD
             .decode(data_b64.trim())
             .map_err(|e| P2pError::Protocol(format!("invalid chunk base64: {e}")))?;
         if bytes.len() > 2 * 1024 * 1024 {
             return Err(P2pError::Protocol("Attachment chunk exceeds 2 MiB".into()));
         }
+        let sealed = self
+            .vault_box
+            .seal_bytes(&format!("blob:{attachment_id}:{chunk_index}"), &bytes)?;
         let dir = self.blobs_dir.join(attachment_id);
         std::fs::create_dir_all(&dir)?;
-        std::fs::write(dir.join(format!("chunk_{chunk_index}.bin")), bytes)?;
+        std::fs::write(dir.join(format!("chunk_{chunk_index}.bin")), sealed)?;
         Ok(())
     }
 
@@ -1693,7 +1707,9 @@ impl LocalVault {
             .blobs_dir
             .join(attachment_id)
             .join(format!("chunk_{chunk_index}.bin"));
-        Ok(std::fs::read(path)?)
+        let raw = std::fs::read(path)?;
+        self.vault_box
+            .open_bytes(&format!("blob:{attachment_id}:{chunk_index}"), &raw)
     }
 
     /// Reassembles all local attachment chunks and verifies exact SHA-256 digest before returning.

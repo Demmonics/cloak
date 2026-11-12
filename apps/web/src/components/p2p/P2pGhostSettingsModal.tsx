@@ -148,6 +148,7 @@ export function P2pGhostSettingsModal({
       open={open}
       onClose={onClose}
       title="Ghost Mode — Local Privacy & Ephemeral Controls"
+      description="Strictly local protections on this device's SQLite vault and window; peer devices stay untouched."
       wide
       footer={
         <>
@@ -160,18 +161,22 @@ export function P2pGhostSettingsModal({
         </>
       }
     >
-      <form id="ghost-settings-form" onSubmit={handleSave} className="space-y-4 text-xs text-[var(--cloak-text-body)]">
-        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 flex items-center justify-between gap-3">
-          <div className="flex items-start gap-2.5">
-            <ShieldCheck className="w-5 h-5 text-[var(--cloak-accent-text)] shrink-0 mt-0.5" />
+      <form id="ghost-settings-form" onSubmit={handleSave} className="space-y-5 text-xs text-[var(--cloak-text-body)]">
+        <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-4 flex items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--cloak-bg-sage-soft)] border border-[var(--cloak-accent-border)] text-[var(--cloak-accent-text)]">
+              <ShieldCheck className="w-4 h-4" />
+            </span>
             <div>
-              <div className="font-semibold text-[var(--cloak-text)] text-sm">Enable Ghost Mode Protection</div>
-              <div className="text-[var(--cloak-text-muted)] leading-snug">
+              <div className="font-editorial text-base text-[var(--cloak-text)] leading-tight">
+                Enable Ghost Mode Protection
+              </div>
+              <div className="text-[var(--cloak-text-muted)] leading-snug mt-0.5">
                 Acts strictly on this computer&apos;s local SQLite vault and window. It never clears your peer&apos;s device.
               </div>
             </div>
           </div>
-          <label className="inline-flex items-center gap-2 cursor-pointer font-medium text-[var(--cloak-text)]">
+          <label className="inline-flex items-center gap-2 rounded-full border border-[var(--cloak-border)] bg-[var(--cloak-bg-card)] px-3 py-1.5 cursor-pointer font-medium text-[var(--cloak-text)] shrink-0">
             <input
               type="checkbox"
               checked={draft.enabled}
@@ -187,22 +192,22 @@ export function P2pGhostSettingsModal({
           </label>
         </div>
 
-        <fieldset className="space-y-2">
-          <legend className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">
+        <fieldset className="space-y-2.5">
+          <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
             Behavior Level
           </legend>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {MODE_LABELS.map((item) => {
               const selected = draft.mode === item.id;
               return (
                 <label
                   key={item.id}
-                  className={`rounded-[10px] border p-2.5 cursor-pointer flex gap-2 items-start transition-colors ${
+                  className={`rounded-2xl border p-3.5 cursor-pointer flex gap-2.5 items-start cloak-transition ${
                     selected
                       ? item.destructive
-                        ? 'border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)]'
-                        : 'border-[var(--cloak-accent-border)] bg-[var(--cloak-accent-soft)]'
-                      : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] hover:border-[var(--cloak-border-strong)]'
+                        ? 'border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] shadow-2xs'
+                        : 'border-[var(--cloak-accent-border)] bg-[var(--cloak-bg-active)] shadow-2xs'
+                      : 'border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] hover:border-[var(--cloak-border-strong)] hover:bg-[var(--cloak-bg-elevated)]'
                   }`}
                 >
                   <input
@@ -222,7 +227,7 @@ export function P2pGhostSettingsModal({
                   />
                   <div>
                     <div className="font-semibold text-[var(--cloak-text)]">{item.title}</div>
-                    <div className="text-[11px] text-[var(--cloak-text-muted)] leading-snug">{item.desc}</div>
+                    <div className="text-[11px] text-[var(--cloak-text-muted)] leading-relaxed mt-0.5">{item.desc}</div>
                   </div>
                 </label>
               );
@@ -231,7 +236,7 @@ export function P2pGhostSettingsModal({
         </fieldset>
 
         {needsDestructiveConfirm && (
-          <div className="rounded-[10px] border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] p-3 space-y-2">
+          <div className="rounded-2xl border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] p-4 space-y-2">
             <div className="flex items-center gap-2 text-[var(--cloak-danger-text)] font-semibold">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               Explicit Destructive Local History Confirmation Required
@@ -252,9 +257,9 @@ export function P2pGhostSettingsModal({
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-4 space-y-2.5">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
               Activation Triggers
             </div>
             {(
@@ -265,7 +270,7 @@ export function P2pGhostSettingsModal({
                 ['onClose', 'Closing Cloak Desktop'],
               ] as const
             ).map(([key, label]) => (
-              <label key={key} className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)]">
+              <label key={key} className="flex items-center gap-2.5 cursor-pointer text-[var(--cloak-text-body)] py-0.5">
                 <input
                   type="checkbox"
                   checked={draft.triggers[key]}
@@ -281,11 +286,11 @@ export function P2pGhostSettingsModal({
             ))}
           </div>
 
-          <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cloak-text-muted)]">
+          <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-4 space-y-2.5">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cloak-text-muted)]">
               Privacy & Forensics Hardening
             </div>
-            <label className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)]">
+            <label className="flex items-center gap-2.5 cursor-pointer text-[var(--cloak-text-body)]">
               <input
                 type="checkbox"
                 checked={draft.clearAttachments}
@@ -293,7 +298,7 @@ export function P2pGhostSettingsModal({
               />
               <span>Purge orphaned attachment blobs after erasure</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)]">
+            <label className="flex items-center gap-2.5 cursor-pointer text-[var(--cloak-text-body)]">
               <input
                 type="checkbox"
                 checked={draft.hideSensitiveNames}
@@ -301,7 +306,7 @@ export function P2pGhostSettingsModal({
               />
               <span>Hide room & peer names while Privacy Shield is active</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer text-[var(--cloak-text-body)]">
+            <label className="flex items-center gap-2.5 cursor-pointer text-[var(--cloak-text-body)]">
               <input
                 type="checkbox"
                 checked={draft.captureProtection}
@@ -309,7 +314,7 @@ export function P2pGhostSettingsModal({
               />
               <span>Exclude window from Windows capture (SetWindowDisplayAffinity)</span>
             </label>
-            <div className="pt-1 flex items-center justify-between gap-2">
+            <div className="pt-1.5 border-t border-[var(--cloak-border)] flex items-center justify-between gap-2">
               <label htmlFor="viewed-dwell-select" className="text-[var(--cloak-text-muted)]">
                 Viewed dwell threshold
               </label>
@@ -317,7 +322,7 @@ export function P2pGhostSettingsModal({
                 id="viewed-dwell-select"
                 value={draft.viewedDwellMs}
                 onChange={(e) => setDraft((p) => ({ ...p, viewedDwellMs: Number(e.target.value) }))}
-                className="rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-[var(--cloak-text)]"
+                className="rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1 text-[var(--cloak-text)]"
               >
                 <option value={250}>250 ms (Fast)</option>
                 <option value={800}>800 ms (Default)</option>
@@ -337,7 +342,7 @@ export function P2pGhostSettingsModal({
                     outgoingViewedPolicy: e.target.value as P2pOutgoingViewedPolicy,
                   }))
                 }
-                className="rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2 py-1 text-[var(--cloak-text)]"
+                className="rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1 text-[var(--cloak-text)]"
               >
                 <option value="immediate_after_dwell">Clear after viewed dwell</option>
                 <option value="preserve_outgoing">Preserve my outgoing messages</option>
@@ -348,10 +353,10 @@ export function P2pGhostSettingsModal({
         </div>
 
         {/* Argon2id Privacy PIN */}
-        <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+        <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-4 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="font-semibold text-[var(--cloak-text)] inline-flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5 text-[var(--cloak-info-text)]" /> Privacy Shield PIN Lock (Argon2id)
+              <Lock className="w-3.5 h-3.5 text-[var(--cloak-accent-text)]" /> Privacy Shield PIN Lock (Argon2id)
             </div>
             {draft.hasPinConfigured && (
               <button
@@ -377,14 +382,14 @@ export function P2pGhostSettingsModal({
               value={pinInput}
               onChange={(e) => setPinInput(e.target.value)}
               placeholder={draft.hasPinConfigured ? 'Enter new PIN to replace...' : 'Set 4+ char PIN...'}
-              className="flex-1 min-w-[180px] rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1.5 text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
+              className="flex-1 min-w-[180px] rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3.5 py-1.5 text-[var(--cloak-text)] placeholder:text-[var(--cloak-text-dim)]"
             />
           </div>
         </div>
 
         {/* Per-Room Override */}
         {activeRoomId && (
-          <div className="rounded-[10px] border border-[var(--cloak-border)] bg-[var(--cloak-bg-elevated)] p-3 space-y-2">
+          <div className="rounded-2xl border border-[var(--cloak-border)] bg-[var(--cloak-bg-surface)] p-4 space-y-2.5">
             <label className="flex items-center gap-2 cursor-pointer font-medium text-[var(--cloak-text)]">
               <input
                 type="checkbox"
@@ -399,7 +404,7 @@ export function P2pGhostSettingsModal({
                   aria-label="Room Ghost Mode override"
                   value={overrideMode}
                   onChange={(e) => setOverrideMode(e.target.value as P2pGhostModeLevel)}
-                  className="rounded-[7px] bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-2.5 py-1 text-[var(--cloak-text)]"
+                  className="rounded-full bg-[var(--cloak-bg-input)] border border-[var(--cloak-border)] px-3 py-1 text-[var(--cloak-text)]"
                 >
                   <option value="off">Off</option>
                   <option value="privacy_shield">Privacy Shield</option>
@@ -420,7 +425,7 @@ export function P2pGhostSettingsModal({
         )}
 
         {error && (
-          <div role="alert" className="rounded-[8px] border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] p-2 text-[var(--cloak-danger-text)]">
+          <div role="alert" className="rounded-2xl border border-[var(--cloak-danger-border)] bg-[var(--cloak-danger-soft)] p-3 text-[var(--cloak-danger-text)]">
             {error}
           </div>
         )}
