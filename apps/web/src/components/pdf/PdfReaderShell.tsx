@@ -1029,14 +1029,30 @@ export function PdfReaderShell({
           </button>
         )}
 
-        {!bootstrap.locked && onReturnToMessenger && (
+        {bootstrap.locked ? (
           <button
             type="button"
-            onClick={onReturnToMessenger}
+            onClick={() => {
+              setUnlockMethodChoice('hidden_shortcut_input');
+              setUnlockModalOpen(true);
+              setTimeout(() => hiddenUnlockInputRef.current?.focus(), 40);
+            }}
             className="px-2.5 py-1 rounded bg-[#2563eb] text-white font-medium hover:bg-[#1d4ed8]"
+            aria-label="Workspace"
+            title="Unlock Cloak Workspace (requires secret code)"
           >
             Workspace
           </button>
+        ) : (
+          onReturnToMessenger && (
+            <button
+              type="button"
+              onClick={onReturnToMessenger}
+              className="px-2.5 py-1 rounded bg-[#2563eb] text-white font-medium hover:bg-[#1d4ed8]"
+            >
+              Workspace
+            </button>
+          )
         )}
       </header>
 

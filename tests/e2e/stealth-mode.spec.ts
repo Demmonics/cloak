@@ -164,6 +164,21 @@ test.describe('Cloak Phase 10 Stealth Mode + Offline PDF Decoy + Secret Unlock +
         timeout: 6000,
       });
 
+      // Verify "PDF Cover" button switches to PDF disguise and locks workspace (cannot bypass without secret code)
+      await pageA.getByTestId('switch-pdf-btn').click();
+      await expect(pageA.getByTestId('pdf-reader-shell')).toBeVisible({ timeout: 8000 });
+      await expect(pageA.getByTestId('pdf-welcome-screen')).toBeVisible();
+      expect(await pageA.title()).toBe('Document Reader');
+
+      // Clicking "Workspace" prompts for secret code instead of bypassing the lock
+      await pageA.getByRole('button', { name: 'Workspace', exact: true }).click();
+      await expect(pageA.getByLabel('Reader Access Prompt')).toBeVisible();
+      await pageA.getByPlaceholder('Enter secret code, passphrase, or PIN').fill('#cloak');
+      await pageA.getByRole('button', { name: 'Submit', exact: true }).click();
+      await expect(pageA.getByRole('heading', { name: 'Hidden Ops Vault' })).toBeVisible({
+        timeout: 8000,
+      });
+
       // Open Stealth & PDF Settings Modal and inspect all 6 tabs visually!
       await pageA.getByTestId('stealth-settings-btn').click();
       await expect(

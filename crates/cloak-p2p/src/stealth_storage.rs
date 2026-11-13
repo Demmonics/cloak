@@ -154,6 +154,31 @@ impl LocalVault {
             )?;
         }
 
+        let codes_count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM stealth_secret_codes",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if codes_count == 0 {
+            let id = Uuid::new_v4().to_string();
+            let argon2_hash = hash_secret_code("#cloak", false)?;
+            let action_json = serde_json::to_string(&SecretCodeAction::OpenMessenger)?;
+            self.conn.execute(
+                "INSERT INTO stealth_secret_codes (id, label, action, target_room_id, case_sensitive, is_weak, require_additional_auth, argon2_hash, created_at, last_used_at)
+                 VALUES (?1, ?2, ?3, NULL, 0, 0, 0, ?4, ?5, NULL)",
+                params![
+                    id,
+                    "Default Unlock Code",
+                    action_json,
+                    argon2_hash,
+                    Utc::now().to_rfc3339(),
+                ],
+            )?;
+        }
+
         Ok(())
     }
 
@@ -299,10 +324,22 @@ impl LocalVault {
             .collect::<Result<Vec<_>, _>>()?;
         drop(stmt);
 
+        let trimmed = candidate.trim();
+        let with_hash = if trimmed.starts_with('#') {
+            trimmed.to_string()
+        } else {
+            format!("#{trimmed}")
+        };
+        let without_hash = trimmed.trim_start_matches('#');
+
         let mut matched: Option<MatchedSecretCode> = None;
         for (id, action_json, target_room_id, code_cs, req_add, hash) in entries {
             let cs = global_case_sensitive && (code_cs != 0);
-            if verify_secret_code(candidate, cs, &hash).unwrap_or(false) && matched.is_none() {
+            let matches_candidate = verify_secret_code(candidate, cs, &hash).unwrap_or(false)
+                || verify_secret_code(trimmed, cs, &hash).unwrap_or(false)
+                || verify_secret_code(&with_hash, cs, &hash).unwrap_or(false)
+                || verify_secret_code(without_hash, cs, &hash).unwrap_or(false);
+            if matches_candidate && matched.is_none() {
                 matched = Some(MatchedSecretCode {
                     id: id.clone(),
                     action: serde_json::from_str(&action_json)

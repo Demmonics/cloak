@@ -425,8 +425,15 @@ export function P2pWorkspacePage() {
         setUnavailableReason(
           'Cloak Desktop API rejected the session token (401 Unauthorized). Launch via cloak-desktop.exe or pass the desktop session token.',
         );
-      } else if (err instanceof P2pApiError && err.status === 423) {
-        // Stealth Mode locked mid-refresh; re-fetch locked-safe bootstrap & decoy metadata instead of treating 423 as offline.
+      } else if (
+        err instanceof P2pApiError &&
+        (err.status === 423 ||
+          (err.status === 403 &&
+            (err.code === 'STEALTH_LOCKED' ||
+              err.message?.includes('STEALTH_LOCKED') ||
+              err.message?.includes('locked'))))
+      ) {
+        // Stealth Mode locked mid-refresh; re-fetch locked-safe bootstrap & decoy metadata instead of treating 403/423 as offline.
         try {
           const [boot, docs] = await Promise.all([
             p2pApi.getStealthBootstrap(),
@@ -1642,7 +1649,7 @@ export function P2pWorkspacePage() {
         className="min-h-screen bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] flex items-center justify-center p-6"
       >
         {callState !== 'idle' && <audio ref={remoteKeepAliveAudioRef} autoPlay className="hidden" />}
-        <div className="cloak-panel-enter max-w-md w-full rounded-3xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-7 space-y-5">
+        <div className="max-w-md w-full rounded-3xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-7 space-y-5">
           <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-bg-sage-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
             <Lock className="w-5 h-5" />
           </div>
@@ -1749,7 +1756,7 @@ export function P2pWorkspacePage() {
   const activePeersCount = status?.activePeerIds.length ?? 0;
 
   return (
-    <div className="h-screen flex bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] overflow-hidden relative">
+    <div className="h-screen flex bg-[var(--cloak-bg-void)] text-[var(--cloak-text)] overflow-hidden relative cloak-messenger-enter">
       {sidebarOpen && (
         <div
           aria-hidden="true"
@@ -2324,7 +2331,7 @@ export function P2pWorkspacePage() {
             data-testid="ghost-privacy-overlay"
             className="flex-1 flex items-center justify-center p-6 bg-[var(--cloak-bg-void)]"
           >
-            <div className="cloak-panel-enter max-w-md w-full rounded-3xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-7 space-y-5 text-center">
+            <div className="max-w-md w-full rounded-3xl border border-[var(--cloak-border-strong)] bg-[var(--cloak-bg-card)] shadow-[var(--cloak-dialog-shadow)] p-7 space-y-5 text-center">
               <div className="mx-auto w-12 h-12 rounded-full bg-[var(--cloak-bg-sage-soft)] border border-[var(--cloak-accent-border)] flex items-center justify-center text-[var(--cloak-accent-text)]">
                 <ShieldOff className="w-5 h-5" />
               </div>
@@ -2368,7 +2375,7 @@ export function P2pWorkspacePage() {
             </div>
           </div>
         ) : (
-          <div ref={messageListRef} className="flex-1 overflow-y-auto overflow-x-hidden" data-testid="p2p-message-list">
+          <div ref={messageListRef} className="flex-1 overflow-y-auto overflow-x-hidden cloak-messenger-enter" data-testid="p2p-message-list">
             <div className="max-w-[920px] mx-auto w-full min-h-full px-4 sm:px-8 py-6 flex flex-col">
               {loadingMessages && messages.length === 0 ? (
                 <div className="space-y-3 my-auto max-w-xl w-full mx-auto">

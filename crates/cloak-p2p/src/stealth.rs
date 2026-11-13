@@ -772,6 +772,23 @@ pub fn evaluate_privacy_rules(
         now_ms,
     } = ctx;
     if !config.enabled {
+        // Explicit manual PDF Cover remains available even before full Stealth lock automation is armed.
+        // It always requires entering the secret code to return to the workspace.
+        if trigger == PrivacyTriggerKind::ManualSwitchToPdf {
+            return RuleEvaluationDecision {
+                matched_rule_ids: Vec::new(),
+                visual_action: StealthVisualAction::SwitchToPdf,
+                lock_action: LockAction::RequireUnlock,
+                deletion_action: LocalDeletionAction::KeepAll,
+                attachment_action: AttachmentPurgeAction::Keep,
+                notification_action: config.notifications.pdf_mode_level,
+                voice_action: config.calls.voice_action,
+                camera_action: config.calls.camera_action,
+                screen_share_action: config.calls.screen_share_action,
+                arm_background_away_ms: None,
+                supressed_by_modal: false,
+            };
+        }
         return RuleEvaluationDecision {
             matched_rule_ids: Vec::new(),
             visual_action: StealthVisualAction::None,
@@ -874,16 +891,24 @@ pub fn evaluate_privacy_rules(
         .first()
         .map(|r| r.visual_action)
         .unwrap_or(fallback_visual);
-    if matches!(
-        trigger,
-        PrivacyTriggerKind::ManualSwitchToPdf | PrivacyTriggerKind::PanicHotkey
-    ) && visual_action == StealthVisualAction::None
+    if trigger == PrivacyTriggerKind::ManualSwitchToPdf
+        && matching.is_empty()
+        && !matches!(
+            visual_action,
+            StealthVisualAction::SwitchToPdf
+                | StealthVisualAction::SwitchToSelectedPdf
+                | StealthVisualAction::GenericDocumentList
+        )
+    {
+        visual_action = StealthVisualAction::SwitchToPdf;
+    } else if trigger == PrivacyTriggerKind::PanicHotkey
+        && visual_action == StealthVisualAction::None
     {
         visual_action = StealthVisualAction::SwitchToPdf;
     }
 
     let lock_action = matching.first().map(|r| r.lock_action).unwrap_or(
-        if config.unlock.require_unlock_on_return {
+        if config.unlock.require_unlock_on_return || trigger == PrivacyTriggerKind::ManualSwitchToPdf {
             LockAction::RequireUnlock
         } else {
             LockAction::None

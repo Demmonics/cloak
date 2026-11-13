@@ -670,3 +670,60 @@ async fn pdf_search_ordinary_queries_do_not_lockout_while_burst_throttles() {
     node.shutdown();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn manual_pdf_cover_works_before_stealth_enabled_and_overrides_shield_default() {
+    let dir = temp_vault_dir("manual-pdf-cover");
+    let node = P2pNode::start(&dir, "127.0.0.1:0", "CoverUser")
+        .await
+        .expect("start");
+
+    // 1. Default state: stealth.enabled == false. Clicking "PDF Cover" switches to PdfReader and locks workspace.
+    let cfg = node.stealth().get_config().unwrap();
+    assert!(!cfg.enabled);
+    let cover_boot = node
+        .stealth()
+        .handle_trigger(PrivacyTriggerKind::ManualSwitchToPdf)
+        .unwrap();
+    assert_eq!(cover_boot.active_surface, ActiveSurface::PdfReader);
+    assert!(cover_boot.locked);
+    assert_eq!(cover_boot.window_title, "Document Reader");
+
+    // Returning to Messenger without secret code MUST be rejected
+    assert!(node.stealth().switch_to_messenger_if_unlocked().is_err());
+
+    // Entering secret code '#cloak' (or 'cloak') unlocks back into Messenger
+    let unlock_res = node
+        .stealth()
+        .verify_and_unlock(UnlockMethod::PdfSearch, "#cloak", None)
+        .unwrap();
+    assert!(unlock_res.unlocked);
+    assert_eq!(unlock_res.bootstrap.active_surface, ActiveSurface::Messenger);
+    assert!(!unlock_res.bootstrap.locked);
+
+    // 2. When Stealth IS enabled with PrivacyShield default cover, ManualSwitchToPdf still opens PdfReader and locks.
+    let mut cfg = node.stealth().get_config().unwrap();
+    cfg.enabled = true;
+    cfg.stealth_visual_action = StealthVisualAction::PrivacyShield;
+    cfg.unlock.require_unlock_on_return = false;
+    node.stealth().update_config(cfg).unwrap();
+
+    let armed_cover = node
+        .stealth()
+        .handle_trigger(PrivacyTriggerKind::ManualSwitchToPdf)
+        .unwrap();
+    assert_eq!(armed_cover.active_surface, ActiveSurface::PdfReader);
+    assert!(armed_cover.locked);
+
+    // Unlocking with 'cloak' (without leading hash) also unlocks successfully
+    let unlock_res2 = node
+        .stealth()
+        .verify_and_unlock(UnlockMethod::HiddenShortcutInput, "cloak", None)
+        .unwrap();
+    assert!(unlock_res2.unlocked);
+    assert_eq!(unlock_res2.bootstrap.active_surface, ActiveSurface::Messenger);
+    assert!(!unlock_res2.bootstrap.locked);
+
+    node.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
+}

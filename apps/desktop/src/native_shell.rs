@@ -381,8 +381,7 @@ mod imp {
                 Event::UserEvent(ShellUserEvent::StealthUpdated(boot)) => {
                     window.set_title(&boot.window_title);
                     if let Some(ref ti) = tray_icon {
-                        let tip = if boot.stealth_enabled
-                            && (boot.locked || boot.active_surface != ActiveSurface::Messenger)
+                        let tip = if boot.locked || boot.active_surface != ActiveSurface::Messenger
                         {
                             boot.window_title.as_str()
                         } else {

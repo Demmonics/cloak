@@ -260,6 +260,9 @@ dialog.cloak-dialog[open]::backdrop {
   .cloak-menu-enter {
     animation: cloak-menu-pop 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+  .cloak-messenger-enter {
+    animation: cloak-messenger-reveal 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
   .cloak-skeleton {
     background: linear-gradient(90deg, var(--cloak-bg-elevated) 25%, var(--cloak-skeleton-mid) 50%, var(--cloak-bg-elevated) 75%);
     background-size: 200% 100%;
@@ -270,6 +273,9 @@ dialog.cloak-dialog[open]::backdrop {
 @media (prefers-reduced-motion: reduce) {
   .cloak-transition {
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .cloak-messenger-enter {
+    animation: none;
   }
   .cloak-skeleton {
     background: var(--cloak-bg-elevated);
@@ -315,6 +321,17 @@ dialog.cloak-dialog[open]::backdrop {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes cloak-messenger-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 

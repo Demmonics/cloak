@@ -7,7 +7,7 @@ use crate::error::{P2pError, P2pResult};
 use crate::model::NodeEvent;
 use crate::stealth::{
     ActiveCallPrivacySummary, ActiveSurface, CameraAction, LocalDeletionAction, LockAction,
-    PdfDocumentRecord, PdfReaderTheme, PrivacyTriggerKind, RuleEvalContext, ScreenShareAction,
+    PdfDocumentRecord, PrivacyTriggerKind, RuleEvalContext, ScreenShareAction,
     SecretCodeAction, StealthBootstrapState, StealthConfig, StealthLaunchView,
     StealthLifecycleState, StealthPdfReturnBehavior, StealthVisualAction, UnlockMethod,
     UnlockOutcome, VoiceCallAction, evaluate_privacy_rules,
@@ -974,11 +974,7 @@ impl StealthController {
             launch_view: cfg.launch_view,
             pdf_return_behavior: cfg.pdf_reader.return_behavior,
             default_pdf_id: self.select_default_pdf_id(&docs, &cfg),
-            pdf_theme: if cfg.enabled {
-                cfg.pdf_reader.theme
-            } else {
-                PdfReaderTheme::Light
-            },
+            pdf_theme: cfg.pdf_reader.theme,
             window_title,
             enabled_unlock_methods: cfg.unlock.enabled_methods.clone(),
             require_additional_auth: cfg.unlock.require_additional_auth,
