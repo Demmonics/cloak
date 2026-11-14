@@ -4,6 +4,20 @@
 
 Built with a native Rust P2P transport and SQLite vault engine (`cloak-p2p`), a native Windows Edge WebView2 desktop shell (`cloak-desktop`), and a retro-modern Stone & Sage React frontend (`@cloak/web`).
 
+[![Release](https://img.shields.io/github/v/release/Demmonics/cloak?label=Download%20v0.1.0)](https://github.com/Demmonics/cloak/releases/tag/v0.1.0)
+[![Windows](https://img.shields.io/badge/Platform-Windows%20x64-blue)](#quick-download-windows)
+
+---
+
+## Quick Download (Windows)
+
+No installation prerequisites needed — download and run directly:
+
+* **[Download Cloak-Setup-x64.exe (v0.1.0)](https://github.com/Demmonics/cloak/releases/download/v0.1.0/Cloak-Setup-x64.exe)** — Official Windows installer (Start menu & desktop shortcuts)
+* **[Download Cloak-Portable-win64.zip (v0.1.0)](https://github.com/Demmonics/cloak/releases/download/v0.1.0/Cloak-Portable-win64.zip)** — Zero-install portable zip archive
+* **[Download Standalone cloak-desktop.exe](https://github.com/Demmonics/cloak/releases/download/v0.1.0/cloak-desktop.exe)** — Direct standalone binary
+* All releases & checksums: **[GitHub Releases v0.1.0](https://github.com/Demmonics/cloak/releases/tag/v0.1.0)**
+
 ---
 
 ## Visual Overview
