@@ -1,0 +1,31 @@
+{
+  "taskName": "GitHubCopilot-CloakDocumentationSync",
+  "pollSeconds": 180,
+  "maxRetrySeconds": 3600,
+  "remoteName": "origin",
+  "expectedRemoteUrl": "https://github.com/Demmonics/cloak.git",
+  "repositorySlug": "Demmonics/cloak",
+  "expectedVisibility": "PUBLIC",
+  "documentationBranch": "copilot/documentation-sync",
+  "bootstrapBaseRef": "refs/remotes/origin/main",
+  "bootstrapBaseCommit": "ac1a76a2f191610a7ae5a2c3681b0448a434c954",
+  "requiredCommitTrailer": "Privacy-Reviewed: yes",
+  "maxAllowedFileBytes": 262144,
+  "maxDiffCharacters": 2097152,
+  "allowedPathPatterns": [
+    "^docs/copilot/[A-Za-z0-9._/-]+\\.md$",
+    "^tools/copilot-sync\\.ps1$",
+    "^tools/copilot-sync\\.config\\.json$"
+  ],
+  "generatedStatusPaths": [
+    "docs/copilot/LIVE_STATUS.md",
+    "docs/copilot/AGENT_ACTIVITY.md",
+    "docs/copilot/GITHUB_SYNC_STATUS.md"
+  ],
+  "agentBranchOwners": {
+    "main": "Antigravity",
+    "codex/archive-integration": "Codex",
+    "qa/overnight-review": "Codex",
+    "copilot/documentation-sync": "Copilot"
+  }
+}
