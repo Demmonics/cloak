@@ -366,7 +366,10 @@ function Test-PushCandidate {
     if ($patch.ExitCode -ne 0 -or $patch.StdOut.Length -gt [int]$script:Config.maxDiffCharacters) {
         return [pscustomobject]@{ Allowed = $false; Reason = 'diff-unavailable-or-too-large'; Base = $base; Ahead = $ahead }
     }
-    if (Test-SensitiveText -Text $patch.StdOut) {
+    $addedText = @($patch.StdOut -split "`r?`n" |
+        Where-Object { $_.StartsWith('+') -and -not $_.StartsWith('+++') } |
+        ForEach-Object { $_.Substring(1) }) -join "`n"
+    if (Test-SensitiveText -Text $addedText) {
         return [pscustomobject]@{ Allowed = $false; Reason = 'sensitive-content-pattern'; Base = $base; Ahead = $ahead }
     }
 
@@ -427,7 +430,10 @@ function Commit-GeneratedSnapshot {
         return [pscustomobject]@{ Created = $false; Reason = 'staged-whitespace-check-failed' }
     }
     $stagedDiff = Invoke-Git -Arguments @('diff', '--cached', '--no-ext-diff', '--unified=0')
-    if ($stagedDiff.ExitCode -ne 0 -or (Test-SensitiveText -Text $stagedDiff.StdOut)) {
+    $addedText = @($stagedDiff.StdOut -split "`r?`n" |
+        Where-Object { $_.StartsWith('+') -and -not $_.StartsWith('+++') } |
+        ForEach-Object { $_.Substring(1) }) -join "`n"
+    if ($stagedDiff.ExitCode -ne 0 -or (Test-SensitiveText -Text $addedText)) {
         return [pscustomobject]@{ Created = $false; Reason = 'generated-status-scan-failed' }
     }
     $commit = Invoke-Git -Arguments @(
