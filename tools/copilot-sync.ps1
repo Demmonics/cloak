@@ -273,6 +273,11 @@ function Test-SensitiveText {
     )
     $safeCopilotAddress = '223556219+Copilot@users.noreply.github.com'
     $candidate = $Text.Replace($safeCopilotAddress, '')
+    $candidate = [regex]::Replace(
+        $candidate,
+        '(?<!\d)\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?(?:\s*(?:Z|[+-]\d{2}:?\d{2}))?)?(?!\d)',
+        ''
+    )
     foreach ($pattern in $patterns) {
         if ([regex]::IsMatch($candidate, $pattern)) { return $true }
     }
