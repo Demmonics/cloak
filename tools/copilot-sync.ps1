@@ -468,24 +468,18 @@ function Try-PushDocumentation {
     }
 
     $push = Invoke-Git -Arguments @(
-        'push', '--porcelain', $script:Config.remoteName,
+        'push', '--set-upstream', '--porcelain', $script:Config.remoteName,
         "HEAD:refs/heads/$($script:Config.documentationBranch)"
     )
     if ($push.ExitCode -ne 0) {
         Write-Log -Event 'push' -Status 'failed' -Branch $script:Config.documentationBranch -Reason 'git-push-failed; retry scheduled'
         return [pscustomobject]@{ Status = 'failed'; Transient = $true; Reason = 'git-push-failed' }
     }
-    $setUpstream = Invoke-Git -Arguments @(
-        'branch', '--set-upstream-to',
-        "$($script:Config.remoteName)/$($script:Config.documentationBranch)",
-        $script:Config.documentationBranch
-    )
     $head = Get-RequiredGitText -Arguments @('rev-parse', '--short', 'HEAD')
     $script:State.lastSuccessfulPush = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz')
     $script:State.lastError = ''
-    $reason = if ($setUpstream.ExitCode -eq 0) { 'fast-forward-push-succeeded' } else { 'push-succeeded; upstream-not-set' }
-    Write-Log -Event 'push' -Status 'succeeded' -Branch $script:Config.documentationBranch -Commit $head -Reason $reason
-    return [pscustomobject]@{ Status = 'succeeded'; Transient = $false; Reason = $reason }
+    Write-Log -Event 'push' -Status 'succeeded' -Branch $script:Config.documentationBranch -Commit $head -Reason 'fast-forward-push-succeeded'
+    return [pscustomobject]@{ Status = 'succeeded'; Transient = $false; Reason = 'fast-forward-push-succeeded' }
 }
 
 function Invoke-SyncCycle {
