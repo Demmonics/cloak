@@ -30,7 +30,7 @@ $script:State = [ordered]@{
 if (Test-Path -LiteralPath $script:StatePath) {
     try {
         $stored = Get-Content -LiteralPath $script:StatePath -Raw | ConvertFrom-Json
-        foreach ($property in $script:State.Keys) {
+        foreach ($property in @($script:State.Keys)) {
             if ($stored.PSObject.Properties.Name -contains $property) {
                 $script:State[$property] = $stored.$property
             }
@@ -161,6 +161,7 @@ function Get-BranchRows {
         if ($script:Config.agentBranchOwners.PSObject.Properties.Name -contains $branch) {
             $owner = $script:Config.agentBranchOwners.$branch
         }
+        if ($owner -eq 'Unassigned') { continue }
         $rows.Add([pscustomobject]@{
             Branch = $branch
             Commit = $parts[1]
@@ -175,19 +176,26 @@ function Get-BranchRows {
     return $rows.ToArray()
 }
 
+function Get-WorkerTaskStatus {
+    $task = Get-ScheduledTask -TaskName $script:Config.taskName -TaskPath '\' -ErrorAction SilentlyContinue
+    if ($task) { return [string]$task.State }
+    return 'Not installed'
+}
+
 function Get-SnapshotDigest {
-    param([object[]]$Rows)
+    param([object[]]$Rows, [string]$WorkerTaskStatus)
     $lines = @($Rows | Where-Object { $_.Branch -ne $script:Config.documentationBranch } |
         Sort-Object Branch | ForEach-Object {
             "$($_.Branch)|$($_.Commit)|$($_.Upstream)|$($_.Ahead)|$($_.Behind)|$($_.Relation)"
         })
+    $lines += "worker-task|$WorkerTaskStatus"
     $bytes = [System.Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
     $sha = [System.Security.Cryptography.SHA256]::HashData($bytes)
     return [Convert]::ToHexString($sha).ToLowerInvariant()
 }
 
 function Write-GeneratedStatus {
-    param([object[]]$Rows, [string]$CheckedAt)
+    param([object[]]$Rows, [string]$CheckedAt, [string]$WorkerTaskStatus)
     $mainRow = $Rows | Where-Object Branch -eq 'main' | Select-Object -First 1
     $docRow = $Rows | Where-Object Branch -eq $script:Config.documentationBranch | Select-Object -First 1
     $otherAhead = @($Rows | Where-Object {
@@ -228,6 +236,7 @@ function Write-GeneratedStatus {
         "- Copilot documentation branch commit: ``$docCommit``",
         "- Local pending non-Copilot branches: $blocked",
         "- Last successful push (local state): $lastPush",
+        "- Worker task: $WorkerTaskStatus",
         "- Worker last error: $lastError",
         '',
         'This status reports Git refs only; it does not inspect or stage other agents'' working files.'
@@ -244,6 +253,7 @@ function Write-GeneratedStatus {
         "- Documentation branch commit: ``$docCommit``",
         "- Local main: ``$mainCommit`` ($mainAhead ahead)",
         "- Last successful push (local state): $lastPush",
+        "- Worker task: $WorkerTaskStatus",
         "- Last error: $lastError",
         "- Blocked branches requiring manual privacy review: $blocked",
         '',
@@ -496,7 +506,8 @@ function Invoke-SyncCycle {
     }
 
     $rows = @(Get-BranchRows)
-    $digest = Get-SnapshotDigest -Rows $rows
+    $workerTaskStatus = Get-WorkerTaskStatus
+    $digest = Get-SnapshotDigest -Rows $rows -WorkerTaskStatus $workerTaskStatus
     $snapshotChanged = $digest -ne [string]$script:State.lastSnapshotDigest
     $pending = @($rows | Where-Object {
         $_.Branch -ne $script:Config.documentationBranch -and $_.Ahead -gt 0
@@ -515,7 +526,7 @@ function Invoke-SyncCycle {
 
     if ($snapshotChanged -and -not $DryRunMode) {
         $script:State.lastSnapshotAt = $checkedAt
-        Write-GeneratedStatus -Rows $rows -CheckedAt $checkedAt
+        Write-GeneratedStatus -Rows $rows -CheckedAt $checkedAt -WorkerTaskStatus $workerTaskStatus
         $commitResult = Commit-GeneratedSnapshot
         if ($commitResult.Created) {
             Write-Log -Event 'status-snapshot' -Status 'committed' -Branch $script:Config.documentationBranch -Commit $commitResult.Commit -Reason 'deterministic branch metadata only'
@@ -538,7 +549,7 @@ function Invoke-SyncCycle {
 
     if (-not $DryRunMode) {
         $currentRows = @(Get-BranchRows)
-        Write-GeneratedStatus -Rows $currentRows -CheckedAt $checkedAt
+        Write-GeneratedStatus -Rows $currentRows -CheckedAt $checkedAt -WorkerTaskStatus $workerTaskStatus
         if (-not $transientFailure -and $pushResult.Status -ne 'blocked') {
             $script:State.lastError = ''
         }

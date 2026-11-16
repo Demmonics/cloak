@@ -1,6 +1,6 @@
 # Feature matrix
 
-This matrix describes local source at `360a827` unless a branch/commit is named. Implementation-agent reports are labeled as reported, not independently verified. The release/security gate is **BLOCKED**.
+This matrix describes local source at `360a827` unless a branch/commit is named. Local `main` has since advanced to `807cd5e`; its newer commits and dirty worktree have not been reviewed or tested in this cycle. Treat these statuses as findings at the cited checkpoints, not as verification of current `main`. Implementation-agent reports are labeled as reported, not independently verified. The release/security gate is **BLOCKED**.
 
 | Feature | Status | Source / evidence | Validation and limitations |
 |---|---|---|---|

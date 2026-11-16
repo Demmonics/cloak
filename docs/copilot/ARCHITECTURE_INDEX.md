@@ -2,7 +2,7 @@
 
 ## Local implementation snapshot
 
-The implementation observed at `360a827` lives in `Rust Arcade/52-reasons/` on local `main`; that source tree is not present on the current public `origin/main` baseline.
+The implementation observed at `360a827` lives in `Rust Arcade/52-reasons/` on local `main`; that source tree is not present on the current public `origin/main` baseline. Local `main` has since advanced to `807cd5e`, whose changes have not been inspected in this cycle; the entries below describe the older inspected checkpoint only.
 
 | Area | Entry points | Current shape / caveat |
 |---|---|---|

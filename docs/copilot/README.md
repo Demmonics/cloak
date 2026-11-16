@@ -12,7 +12,7 @@ This directory is the sanitized, Copilot-owned status and recovery record for th
 
 ## Evidence rules
 
-This snapshot describes local project source at `360a827`; `origin/main` is an older public baseline. Test statements are labeled by source and exact commit. Implementation-agent reports are not independent verification. Source presence, automated tests, visual inspection, security checks, and release acceptance are separate evidence.
+Detailed implementation and QA notes cite the inspected checkpoint `360a827`. Local `main` has since advanced to `807cd5e` (17 commits ahead of public `origin/main` at the last observation); those newer changes and the dirty worktree have not been independently reviewed or tested. Treat feature and architecture details as historical evidence at their cited commits, not as verified current behavior. Implementation-agent reports are not independent verification. Source presence, automated tests, visual inspection, security checks, and release acceptance are separate evidence.
 
 The local implementation history contains private-derived assets and content. This documentation branch is based directly on the existing public `origin/main` and publishes only sanitized `docs/copilot/` documentation plus the constrained synchronization worker. It does not merge or publish local implementation branches.
 
